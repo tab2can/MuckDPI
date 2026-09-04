@@ -1,0 +1,71 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reproducible clock
+        shell: pwsh
+        run: |
+          $epoch = git log -1 --format=%ct
+          echo "SOURCE_DATE_EPOCH=$epoch" >> $env:GITHUB_ENV
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Fetch WinDivert
+        shell: pwsh
+        run: ./tools/fetch-windivert.ps1
+
+      - name: Icon
+        shell: pwsh
+        run: ./tools/make-icon.ps1
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          dotnet publish src/MuckDPI/MuckDPI.csproj -c Release -r win-x64 --self-contained true -o dist/app `
+            -p:DebugType=None -p:DebugSymbols=false -p:PublishSingleFile=false
+          Copy-Item native/WinDivert/x64/WinDivert.dll dist/app/WinDivert.dll -Force
+          Copy-Item native/WinDivert/x64/WinDivert64.sys dist/app/WinDivert64.sys -Force
+          Copy-Item LICENSE, README.md, THIRD_PARTY.md, muck.json dist/app/ -Force
+          if (Test-Path third_party/WinDivert.LICENSE) {
+            Copy-Item third_party/WinDivert.LICENSE dist/app/ -Force
+          }
+          Get-ChildItem dist/app -Filter *.pdb -ErrorAction SilentlyContinue | Remove-Item -Force
+          Compress-Archive -Path dist/app\* -DestinationPath dist/muckdpi.zip -Force
+
+      - name: SHA-256 (paste into muck.json)
+        shell: pwsh
+        run: Get-FileHash -Algorithm SHA256 dist/muckdpi.zip | Format-List
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/muckdpi.zip
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/muckdpi.zip --title "${{ github.ref_name }}" --generate-notes

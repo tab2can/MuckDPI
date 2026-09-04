@@ -1,0 +1,66 @@
+{
+  "id": "com.tab2can.muckdpi",
+  "name": "MuckDPI",
+  "version": "1.0.0",
+  "license": "MIT",
+  "summary": "ISP-aware DPI circumvention for Windows. Unblocks site features GoodbyeDPI often leaves broken.",
+  "description": "MuckDPI is a Windows DPI circumvention app that detects your ISP, picks a matching desync strategy, protects DNS with DoH, and applies host packs for CDNs and APIs so YouTube, Discord, Instagram and similar services work beyond the landing page.",
+  "categories": ["network", "utilities"],
+  "tags": ["dpi", "goodbyeDPI", "zapret", "windows", "muck-store"],
+  "source": { "github": "tab2can/MuckDPI" },
+  "entry": "MuckDPI.exe",
+  "install": {
+    "kind": "archive",
+    "assets": [
+      {
+        "file": "muckdpi.zip",
+        "platform": "windows-x64",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "shortcuts": { "startMenu": true, "desktop": false }
+  },
+  "build": {
+    "workflow": ".github/workflows/release.yml",
+    "reproducible": true,
+    "attestations": "required"
+  },
+  "permissions": [
+    "admin",
+    "network",
+    "filesystem",
+    "autostart",
+    "notifications",
+    "other-process"
+  ],
+  "filesystemPaths": [
+    "%APPDATA%\\MuckDPI\\*",
+    "%APPDATA%\\MuckStore\\config\\com.tab2can.muckdpi.json"
+  ],
+  "update": { "channel": "github-releases", "includePrerelease": false },
+  "watchdog": { "onCrash": "notify", "maxRestarts": 2 },
+  "i18n": {
+    "tr": {
+      "name": "MuckDPI",
+      "summary": "ISS'nize göre ayarlanan Windows DPI aşımı. GoodbyeDPI'nin açık bırakıp çalıştırmadığı site özelliklerini de toparlar.",
+      "description": "MuckDPI, ISS'nizi tanır, uygun desync stratejisini seçer, DNS'i DoH ile korur ve YouTube, Discord, Instagram gibi servislerin CDN/API alan adlarını da kapsar."
+    }
+  },
+  "ui": {
+    "icon": "docs/icon.png",
+    "accent": "#e8b84a"
+  },
+  "settings": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "language": { "type": "string", "default": "tr", "title": "Language" },
+        "strategyId": { "type": "string", "default": "auto", "title": "Strategy" },
+        "ispId": { "type": "string", "default": "auto", "title": "ISP" },
+        "dnsProvider": { "type": "string", "default": "cloudflare", "title": "DNS" },
+        "enableDnsProtect": { "type": "boolean", "default": true },
+        "autoStartEngine": { "type": "boolean", "default": false }
+      }
+    }
+  }
+}

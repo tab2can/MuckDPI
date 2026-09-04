@@ -1,0 +1,242 @@
+<Window x:Class="MuckDPI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MuckDPI"
+        Height="760" Width="1120"
+        MinHeight="640" MinWidth="960"
+        Background="{StaticResource BgBrush}"
+        WindowStartupLocation="CenterScreen"
+        Closing="OnClosing"
+        StateChanged="OnStateChanged">
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="0" GlassFrameThickness="0" ResizeBorderThickness="6" CornerRadius="0"/>
+  </WindowChrome.WindowChrome>
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="248"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <Border Grid.Column="0" Background="#101118" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,1,0">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="22,22,22,12">
+          <StackPanel Orientation="Horizontal">
+            <Border Width="36" Height="36" CornerRadius="10" Background="#2A2416" Margin="0,0,12,0">
+              <TextBlock Text="M" FontWeight="Bold" FontSize="20" Foreground="{StaticResource AccentBrush}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel>
+              <TextBlock Text="MuckDPI" FontSize="20" FontWeight="SemiBold"/>
+              <TextBlock Text="ISS'ye göre DPI aşımı" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Margin="16,8,16,20">
+          <Border Style="{StaticResource Card}" Padding="14">
+            <StackPanel>
+              <TextBlock Text="{Binding AccentStatus}" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+              <TextBlock Text="{Binding Status}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <StackPanel Margin="0,8,0,0">
+          <RadioButton Style="{StaticResource NavBtn}" Content="Ana sayfa" IsChecked="True" Checked="NavHome"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="ISS sihirbazı" Checked="NavWizard"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="Servisler" Checked="NavServices"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="DNS koruması" Checked="NavDns"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="Site tarama" Checked="NavProbe"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="Günlük" Checked="NavLog"/>
+          <RadioButton Style="{StaticResource NavBtn}" Content="Ayarlar" Checked="NavSettings"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <DockPanel Grid.Column="1">
+      <Border DockPanel.Dock="Top" Height="56" Background="#101118" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" MouseLeftButtonDown="DragWindow">
+        <Grid Margin="20,0">
+          <TextBlock Text="{Binding StrategyLine}" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Button Content="─" Width="36" Height="28" Style="{StaticResource GhostBtn}" Padding="0" Click="Minimize" Margin="0,0,6,0"/>
+            <Button Content="✕" Width="36" Height="28" Style="{StaticResource GhostBtn}" Padding="0" Click="CloseClick"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Padding="28" VerticalScrollBarVisibility="Auto">
+        <Grid>
+          <!-- HOME -->
+          <StackPanel Visibility="{Binding HomeVisible}">
+            <TextBlock Text="Koruma" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Text="GoodbyeDPI'nin kırdığı yer: yalnızca ana alan adı açılır, video / CDN / API / ses kalır. MuckDPI servis paketleri, DoH ve ISS profiliyle bunu kapatır."
+                       Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,20"/>
+
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.2*"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Card}" Margin="0,0,14,0">
+                <StackPanel>
+                  <TextBlock Text="{Binding Status}" FontSize="22" FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding IspLine}" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding StrategyLine}" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,16"/>
+                  <StackPanel Orientation="Horizontal">
+                    <Button Content="Korumayı başlat" Style="{StaticResource PrimaryBtn}" Command="{Binding StartCommand}" Margin="0,0,10,0"/>
+                    <Button Content="Korumayı durdur" Style="{StaticResource GhostBtn}" Command="{Binding StopCommand}"/>
+                  </StackPanel>
+                  <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                  <TextBlock Text="{Binding StatsLine}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,16,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="1" Style="{StaticResource Card}">
+                <StackPanel>
+                  <TextBlock Text="Neden daha iyi?" FontWeight="SemiBold" FontSize="16"/>
+                  <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                             Text="• ISS algılama (ASN) ve hazır profiller&#10;• Sihirbaz: hattınızda strateji denemesi&#10;• YouTube, Discord, Instagram CDN/API hostları&#10;• DNS zehirlemesine karşı DoH&#10;• QUIC yalnızca gereken servislerde&#10;• Akıllı host listesi: banka/e-Devlet dokunulmaz"/>
+                </StackPanel>
+              </Border>
+            </Grid>
+          </StackPanel>
+
+          <!-- WIZARD -->
+          <StackPanel Visibility="{Binding WizardVisible}">
+            <TextBlock Text="ISS sihirbazı" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,8,0,20" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="Önce ISS'nizi bulun, sonra sihirbaz YouTube / Discord / Instagram / X / Spotify üzerinden hangi desync yönteminin hattınızda çalıştığını ölçer."/>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+              <StackPanel>
+                <TextBlock Text="ISS" FontWeight="SemiBold"/>
+                <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedIspId}" SelectedValuePath="Tag">
+                  <ComboBoxItem Tag="auto" Content="Otomatik (algıla)"/>
+                  <ComboBoxItem Tag="turk-telekom" Content="Türk Telekom"/>
+                  <ComboBoxItem Tag="superonline" Content="Turkcell Superonline"/>
+                  <ComboBoxItem Tag="vodafone" Content="Vodafone"/>
+                  <ComboBoxItem Tag="turknet" Content="TurkNet"/>
+                  <ComboBoxItem Tag="turksat" Content="Türksat Kablonet"/>
+                  <ComboBoxItem Tag="millenicom" Content="Millenicom"/>
+                  <ComboBoxItem Tag="universal" Content="Evrensel"/>
+                </ComboBox>
+                <TextBlock Text="Strateji" FontWeight="SemiBold" Margin="0,16,0,0"/>
+                <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedStrategyId}" SelectedValuePath="Tag">
+                  <ComboBoxItem Tag="auto" Content="Otomatik (ISS profili)"/>
+                  <ComboBoxItem Tag="split-sni" Content="SNI bölme"/>
+                  <ComboBoxItem Tag="split-reverse" Content="Ters SNI bölme"/>
+                  <ComboBoxItem Tag="tiny-frag" Content="Küçük parçalar"/>
+                  <ComboBoxItem Tag="fake-ttl" Content="Sahte TTL + bölme"/>
+                  <ComboBoxItem Tag="fake-seq" Content="Sahte sıra + sağlama"/>
+                  <ComboBoxItem Tag="http-mix" Content="HTTP gizleme + bölme"/>
+                  <ComboBoxItem Tag="aggressive" Content="Agresif"/>
+                </ComboBox>
+                <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                  <Button Content="ISS'yi algıla" Style="{StaticResource GhostBtn}" Command="{Binding DetectCommand}" Margin="0,0,10,0"/>
+                  <Button Content="Hattımı tara" Style="{StaticResource PrimaryBtn}" Command="{Binding TuneCommand}"/>
+                </StackPanel>
+                <TextBlock Text="{Binding IspLine}" Margin="0,14,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding TuneProgress}" Margin="0,8,0,0" Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- SERVICES -->
+          <StackPanel Visibility="{Binding ServicesVisible}">
+            <TextBlock Text="Servis paketleri" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,8,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="Ana site değil, videonun / hikâyenin / sesin / API'nin gittiği alan adları. GoodbyeDPI'nin 'açılıyor ama çalışmıyor' şikayetinin asıl nedeni budur."/>
+            <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+              <ItemsControl ItemsSource="{Binding Services}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <CheckBox Content="{Binding Title}" IsChecked="{Binding Enabled, Mode=TwoWay}"/>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Text="Ek hostlar (her satıra bir alan adı)" FontWeight="SemiBold"/>
+                <TextBox Margin="0,10,0,0" Height="120" AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" Text="{Binding CustomHostsText, UpdateSourceTrigger=PropertyChanged}"/>
+                <ComboBox Margin="0,14,0,0" SelectedValue="{Binding SelectedFilter}" SelectedValuePath="Tag">
+                  <ComboBoxItem Tag="Smart" Content="Akıllı: paketler + öğrenilen hostlar (önerilen)"/>
+                  <ComboBoxItem Tag="Hostlist" Content="Yalnızca seçili paketler"/>
+                  <ComboBoxItem Tag="Global" Content="Tüm HTTPS (banka sitelerini bozabilir)"/>
+                </ComboBox>
+                <Button Content="Kaydet" Style="{StaticResource PrimaryBtn}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- DNS -->
+          <StackPanel Visibility="{Binding DnsVisible}">
+            <TextBlock Text="DNS koruması" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,8,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="ISS DNS zehirlemesi CDN adreslerini sahte IP'ye çevirir. Sayfa açılır, resim ve video açılmaz. MuckDPI UDP/53 sorgularını DoH ile çözer (1.1.1.1 / 8.8.8.8 doğrudan IP)."/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <CheckBox Content="DoH ile DNS korumasını aç" IsChecked="{Binding EnableDnsProtect}"/>
+                <TextBlock Text="Sağlayıcı" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedDns}" SelectedValuePath="Tag">
+                  <ComboBoxItem Tag="cloudflare" Content="Cloudflare (1.1.1.1)"/>
+                  <ComboBoxItem Tag="google" Content="Google (8.8.8.8)"/>
+                  <ComboBoxItem Tag="quad9" Content="Quad9 (9.9.9.9)"/>
+                  <ComboBoxItem Tag="adguard" Content="AdGuard"/>
+                  <ComboBoxItem Tag="mullvad" Content="Mullvad"/>
+                </ComboBox>
+                <CheckBox Content="Pasif DPI RST / sahte yönlendirmeleri düşür" IsChecked="{Binding EnablePassiveDrop}" Margin="0,16,0,0"/>
+                <TextBlock Text="QUIC / HTTP3" FontWeight="SemiBold" Margin="0,16,0,0"/>
+                <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedQuic}" SelectedValuePath="Tag">
+                  <ComboBoxItem Tag="BlockHostlist" Content="YouTube / IG / TikTok için QUIC düşür (önerilen)"/>
+                  <ComboBoxItem Tag="FakeHostlist" Content="Host listesinde sahte QUIC dene"/>
+                  <ComboBoxItem Tag="Off" Content="QUIC'e dokunma"/>
+                  <ComboBoxItem Tag="BlockAll" Content="Tüm QUIC'i düşür"/>
+                </ComboBox>
+                <Button Content="Kaydet" Style="{StaticResource PrimaryBtn}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- PROBE -->
+          <StackPanel Visibility="{Binding ProbeVisible}">
+            <TextBlock Text="Site tarama" FontSize="28" FontWeight="SemiBold"/>
+            <TextBlock Margin="0,8,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                       Text="Koruma açıkken bir URL'nin TLS/HTTP yanıtını ölçer. 20x / zaman aşımı = DPI hâlâ görüyor. IP engeli varsa DPI aşımı yetmez, VPN gerekir."/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBox Text="{Binding ProbeUrl, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Content="Tara" Style="{StaticResource PrimaryBtn}" Command="{Binding ProbeOneCommand}" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+                <TextBlock Text="{Binding ProbeResult}" Margin="0,14,0,0" FontSize="16" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- LOG -->
+          <StackPanel Visibility="{Binding LogVisible}">
+            <TextBlock Text="Günlük" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,16"/>
+            <Border Style="{StaticResource Card}">
+              <TextBox Text="{Binding LogText, Mode=OneWay}" IsReadOnly="True" Height="480"
+                       FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"
+                       VerticalScrollBarVisibility="Auto" Background="#0A0B10"/>
+            </Border>
+          </StackPanel>
+
+          <!-- SETTINGS -->
+          <StackPanel Visibility="{Binding SettingsVisible}">
+            <TextBlock Text="Ayarlar" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,16"/>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <CheckBox Content="Türkçe arayüz metinleri (durum / sihirbaz)" IsChecked="{Binding LanguageTr}"/>
+                <CheckBox Content="Kapatmak yerine tepsiye küçült" IsChecked="{Binding MinimizeToTray}"/>
+                <CheckBox Content="Açılışta korumayı başlat" IsChecked="{Binding AutoStartEngine}"/>
+                <TextBlock Margin="0,16,0,0" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                           Text="Yönetici yetkisi gerekir (WinDivert sürücüsü). Muck Store 'admin' iznini gösterecektir. IP seviyesinde engel (erişim yok, RST yok, zaman aşımı) DPI ile çözülemez."/>
+                <Button Content="Kaydet" Style="{StaticResource PrimaryBtn}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </DockPanel>
+  </Grid>
+</Window>

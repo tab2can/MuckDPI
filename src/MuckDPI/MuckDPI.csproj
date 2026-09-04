@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\muckdpi.ico</ApplicationIcon>
+    <RootNamespace>MuckDPI</RootNamespace>
+    <AssemblyName>MuckDPI</AssemblyName>
+    <Product>MuckDPI</Product>
+    <Company>tab2can</Company>
+    <Version>1.0.0</Version>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <LangVersion>latest</LangVersion>
+    <ApplicationTitle>MuckDPI</ApplicationTitle>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MuckDPI.Engine\MuckDPI.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\muckdpi.ico" Condition="Exists('Assets\muckdpi.ico')" />
+    <Resource Include="Assets\icon.png" Condition="Exists('Assets\icon.png')" />
+  </ItemGroup>
+  <Target Name="CopyWinDivert" AfterTargets="Build">
+    <PropertyGroup>
+      <WinDivertDir>$(MSBuildThisFileDirectory)..\..\native\WinDivert\x64</WinDivertDir>
+    </PropertyGroup>
+    <Copy SourceFiles="$(WinDivertDir)\WinDivert.dll;$(WinDivertDir)\WinDivert64.sys"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(WinDivertDir)\WinDivert.dll')" />
+  </Target>
+</Project>
