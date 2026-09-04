@@ -132,6 +132,24 @@ internal static class PacketMutator
     {
         BinaryPrimitives.WriteUInt16BigEndian(packet.Slice(ipHeaderLength + 16, 2), checksum);
     }
+
+    public static void SetIpv4Src(Span<byte> packet, ReadOnlySpan<byte> addr4) =>
+        addr4.CopyTo(packet.Slice(12, 4));
+
+    public static void SetIpv4Dst(Span<byte> packet, ReadOnlySpan<byte> addr4) =>
+        addr4.CopyTo(packet.Slice(16, 4));
+
+    public static void SetIpv6Src(Span<byte> packet, ReadOnlySpan<byte> addr16) =>
+        addr16.CopyTo(packet.Slice(8, 16));
+
+    public static void SetIpv6Dst(Span<byte> packet, ReadOnlySpan<byte> addr16) =>
+        addr16.CopyTo(packet.Slice(24, 16));
+
+    public static void SetUdpSrcPort(Span<byte> packet, int ipHeaderLength, ushort port) =>
+        BinaryPrimitives.WriteUInt16BigEndian(packet.Slice(ipHeaderLength, 2), port);
+
+    public static void SetUdpDstPort(Span<byte> packet, int ipHeaderLength, ushort port) =>
+        BinaryPrimitives.WriteUInt16BigEndian(packet.Slice(ipHeaderLength + 2, 2), port);
 }
 
 internal static class TlsSni

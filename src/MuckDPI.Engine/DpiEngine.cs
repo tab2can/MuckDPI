@@ -8,21 +8,17 @@ namespace MuckDPI.Engine;
 
 public sealed class DpiEngine : IDisposable
 {
-    public const string Filter =
-        "(outbound and tcp.DstPort == 443) or " +
-        "(outbound and tcp.DstPort == 80) or " +
-        "(outbound and udp.DstPort == 53) or " +
-        "(outbound and udp.DstPort == 443) or " +
-        "(inbound and tcp and tcp.Rst)";
-
     private readonly EngineConfig _config;
     private readonly ConnectionTable _conns;
     private readonly HostMatcher _hosts;
+    private readonly TtlTracker _ttl = new();
     private DohResolver? _doh;
+    private DnsNat? _dnsNat;
     private nint _handle = 0;
     private Thread? _thread;
     private volatile bool _run;
     private readonly object _gate = new();
+    private readonly object _sendLock = new();
 
     public EngineStats Stats { get; } = new();
     public bool IsRunning => _run && _handle != 0 && _handle != nint.Zero && _handle != -1;
@@ -43,9 +39,18 @@ public sealed class DpiEngine : IDisposable
         {
             if (_run) return;
             if (_config.Settings.EnableDnsProtect && _config.Dns != DnsProviderKind.Off)
-                _doh = new DohResolver(_config.Dns);
+            {
+                if (_config.Redirect is { } redir)
+                {
+                    _dnsNat = new DnsNat(redir.Ip, redir.Port);
+                    Emit("info", $"DNS redirect {_dnsNat.Target}:{_dnsNat.Port}");
+                }
+                if (_config.UseDoh)
+                    _doh = new DohResolver(_config.Dns);
+            }
 
-            _handle = WinDivertNative.WinDivertOpen(Filter, WinDivertNative.LayerNetwork, 0, 0);
+            var filter = BuildFilter(_dnsNat?.Port);
+            _handle = WinDivertNative.WinDivertOpen(filter, WinDivertNative.LayerNetwork, 0, 0);
             if (_handle == 0 || _handle == -1)
             {
                 var err = Marshal.GetLastWin32Error();
@@ -57,7 +62,8 @@ public sealed class DpiEngine : IDisposable
             _run = true;
             _thread = new Thread(Loop) { IsBackground = true, Name = "MuckDPI.Engine", Priority = ThreadPriority.AboveNormal };
             _thread.Start();
-            Emit("info", "Engine started");
+            WindowsDns.Flush();
+            Emit("info", $"Engine started ({_config.Strategy.Id})");
         }
     }
 
@@ -76,6 +82,7 @@ public sealed class DpiEngine : IDisposable
         _thread?.Join(1500);
         _doh?.Dispose();
         _doh = null;
+        _dnsNat = null;
         Emit("info", "Engine stopped");
     }
 
@@ -117,6 +124,7 @@ public sealed class DpiEngine : IDisposable
             if (now - lastSweep > 30_000)
             {
                 _conns.Sweep();
+                _dnsNat?.Sweep();
                 lastSweep = now;
             }
             if (now - lastStats > 1000)
@@ -131,6 +139,21 @@ public sealed class DpiEngine : IDisposable
     {
         if (!ParsedPacket.TryParse(buffer.AsSpan(0, length), out var pkt))
         {
+            SendRaw(buffer, length, ref addr);
+            return;
+        }
+
+        if (!addr.Outbound)
+            _ttl.ObserveInbound(pkt);
+
+        if (!addr.Outbound && pkt.IsUdp && _dnsNat is not null && pkt.SrcPort == _dnsNat.Port)
+        {
+            if (_dnsNat.TryRewriteInbound(buffer, length, pkt))
+            {
+                SendRaw(buffer, length, ref addr);
+                Interlocked.Increment(ref Stats.DnsRedirected);
+                return;
+            }
             SendRaw(buffer, length, ref addr);
             return;
         }
@@ -154,9 +177,20 @@ public sealed class DpiEngine : IDisposable
             return;
         }
 
-        if (addr.Outbound && pkt.IsUdp && pkt.DstPort == 53 && _doh is not null)
+        if (addr.Outbound && pkt.IsUdp && pkt.DstPort == 53)
         {
-            HandleDns(buffer, length, pkt, ref addr);
+            if (_dnsNat is not null && _dnsNat.TryRewriteOutbound(buffer, length, pkt))
+            {
+                SendRaw(buffer, length, ref addr);
+                Interlocked.Increment(ref Stats.DnsRedirected);
+                return;
+            }
+            if (_doh is not null)
+            {
+                HandleDns(buffer, length, pkt, ref addr);
+                return;
+            }
+            SendRaw(buffer, length, ref addr);
             return;
         }
 
@@ -198,7 +232,7 @@ public sealed class DpiEngine : IDisposable
         else
             host = _conns.HostOf(key);
 
-        var touch = host is not null && _hosts.ShouldTouch(host);
+        var touch = _hosts.ShouldTouch(host);
         if (!touch)
         {
             SendRaw(buffer, length, ref addr);
@@ -235,8 +269,13 @@ public sealed class DpiEngine : IDisposable
             Buffer.BlockCopy(original, 0, fake, 0, length);
             if (st.FakeObfuscateSni && sniLen > 0)
                 TlsSni.ObfuscateHostname(fake.AsSpan(pkt.PayloadOffset, pkt.PayloadLength), sniOff, sniLen);
-            if (st.FakeTtl > 0)
-                PacketMutator.SetTtl(fake, pkt.IsIPv6, st.FakeTtl);
+            if (st.FakeTtl > 0 || st.AutoTtl)
+            {
+                var ttl = st.AutoTtl
+                    ? _ttl.FakeFor(pkt.DstIp.ToString(), st.FakeTtl)
+                    : st.FakeTtl;
+                PacketMutator.SetTtl(fake, pkt.IsIPv6, ttl);
+            }
             if (st.FakeWrongSeq)
                 PacketMutator.SetTcpSeq(fake, pkt.IpHeaderLength, pkt.Seq - 100000);
             var flags = 0UL;
@@ -306,9 +345,10 @@ public sealed class DpiEngine : IDisposable
             return;
         }
         var host = _conns.HostOf(ConnectionTable.Key(pkt.SrcIp, pkt.SrcPort, pkt.DstIp, pkt.DstPort));
-        var block = _config.Settings.QuicMode == QuicMode.BlockAll
+        var block = _config.Strategy.BlockQuic
+                    || _config.Settings.QuicMode == QuicMode.BlockAll
                     || (host is not null && _hosts.ShouldBlockQuic(host, _config.Settings))
-                    || _config.Settings.QuicMode == QuicMode.BlockHostlist && _config.Settings.FilterMode == FilterMode.Global;
+                    || (_config.Settings.QuicMode == QuicMode.BlockHostlist && _hosts.ShouldBlockQuic(host, _config.Settings));
 
         if (_config.Settings.QuicMode is QuicMode.FakeHostlist && host is not null && _hosts.ShouldTouch(host))
         {
@@ -321,10 +361,10 @@ public sealed class DpiEngine : IDisposable
             return;
         }
 
-        if (block && (_config.Settings.FilterMode == FilterMode.Global || host is null || _hosts.ShouldTouch(host)))
+        if (block)
         {
             Interlocked.Increment(ref Stats.QuicBlocked);
-            return; // drop → client falls back to TCP/TLS which we can desync
+            return;
         }
         SendRaw(buffer, length, ref addr);
     }
@@ -417,15 +457,31 @@ public sealed class DpiEngine : IDisposable
     private void SendRaw(byte[] buffer, int length, ref WinDivertNative.Address addr, ulong checksumFlags = 0)
     {
         if (_handle == 0 || _handle == -1) return;
-        unsafe
+        lock (_sendLock)
         {
-            fixed (byte* p = buffer)
+            unsafe
             {
-                var n = (nint)p;
-                WinDivertNative.WinDivertHelperCalcChecksums(n, (uint)length, ref addr, checksumFlags);
-                WinDivertNative.WinDivertSend(_handle, n, (uint)length, out _, ref addr);
+                fixed (byte* p = buffer)
+                {
+                    var n = (nint)p;
+                    WinDivertNative.WinDivertHelperCalcChecksums(n, (uint)length, ref addr, checksumFlags);
+                    WinDivertNative.WinDivertSend(_handle, n, (uint)length, out _, ref addr);
+                }
             }
         }
+    }
+
+    private static string BuildFilter(ushort? dnsPort)
+    {
+        var extra = dnsPort is > 0
+            ? $" or (inbound and udp.SrcPort == {dnsPort.Value})"
+            : "";
+        return
+            "(outbound and tcp.DstPort == 443) or " +
+            "(outbound and tcp.DstPort == 80) or " +
+            "(outbound and udp.DstPort == 53) or " +
+            "(outbound and udp.DstPort == 443) or " +
+            "(inbound and tcp and tcp.Rst)" + extra;
     }
 
     private void Emit(string level, string message) =>
@@ -447,27 +503,54 @@ public sealed class EngineConfig
     public required Strategy Strategy { get; init; }
     public required HostMatcher Hosts { get; init; }
     public DnsProviderKind Dns { get; init; }
+    public bool UseDoh { get; init; }
+    public (System.Net.IPAddress Ip, ushort Port)? Redirect { get; init; }
 
     public static EngineConfig From(AppSettings settings)
     {
         var isp = settings.IspId is "auto" or "" ? IspCatalog.Get("universal") : IspCatalog.Get(settings.IspId);
         var strategyId = settings.StrategyId is "auto" or "" ? isp.DefaultStrategyId : settings.StrategyId;
+        var dns = ParseDns(settings);
+        var (useDoh, redirect) = ResolveDns(dns);
         return new EngineConfig
         {
             Settings = settings,
             Strategy = StrategyCatalog.Get(strategyId),
             Hosts = new HostMatcher(settings),
-            Dns = settings.EnableDnsProtect
-                ? settings.DnsProvider.ToLowerInvariant() switch
-                {
-                    "google" => DnsProviderKind.Google,
-                    "quad9" => DnsProviderKind.Quad9,
-                    "adguard" => DnsProviderKind.AdGuard,
-                    "mullvad" => DnsProviderKind.Mullvad,
-                    "off" => DnsProviderKind.Off,
-                    _ => DnsProviderKind.Cloudflare
-                }
-                : DnsProviderKind.Off
+            Dns = dns,
+            UseDoh = useDoh,
+            Redirect = redirect
         };
     }
+
+    private static DnsProviderKind ParseDns(AppSettings settings)
+    {
+        if (!settings.EnableDnsProtect) return DnsProviderKind.Off;
+        return settings.DnsProvider.ToLowerInvariant() switch
+        {
+            "yandex" => DnsProviderKind.Yandex,
+            "google" => DnsProviderKind.Google,
+            "quad9" => DnsProviderKind.Quad9,
+            "adguard" => DnsProviderKind.AdGuard,
+            "mullvad" => DnsProviderKind.Mullvad,
+            "doh" or "doh-cloudflare" or "cloudflare-doh" => DnsProviderKind.DohCloudflare,
+            "doh-google" => DnsProviderKind.DohGoogle,
+            "off" => DnsProviderKind.Off,
+            "cloudflare" => DnsProviderKind.Cloudflare,
+            _ => DnsProviderKind.Yandex
+        };
+    }
+
+    private static (bool useDoh, (System.Net.IPAddress, ushort)? redirect) ResolveDns(DnsProviderKind dns) => dns switch
+    {
+        DnsProviderKind.Yandex => (false, (System.Net.IPAddress.Parse("77.88.8.8"), (ushort)1253)),
+        DnsProviderKind.Cloudflare => (false, (System.Net.IPAddress.Parse("1.1.1.1"), (ushort)53)),
+        DnsProviderKind.Google => (false, (System.Net.IPAddress.Parse("8.8.8.8"), (ushort)53)),
+        DnsProviderKind.Quad9 => (false, (System.Net.IPAddress.Parse("9.9.9.9"), (ushort)53)),
+        DnsProviderKind.AdGuard => (false, (System.Net.IPAddress.Parse("94.140.14.14"), (ushort)53)),
+        DnsProviderKind.Mullvad => (false, (System.Net.IPAddress.Parse("194.242.2.2"), (ushort)53)),
+        DnsProviderKind.DohCloudflare => (true, null),
+        DnsProviderKind.DohGoogle => (true, null),
+        _ => (false, null)
+    };
 }

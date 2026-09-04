@@ -16,7 +16,7 @@ public sealed class DohResolver : IDisposable
     {
         var (ip, host, path) = provider switch
         {
-            DnsProviderKind.Google => ("8.8.8.8", "dns.google", "/resolve"),
+            DnsProviderKind.Google or DnsProviderKind.DohGoogle => ("8.8.8.8", "dns.google", "/resolve"),
             DnsProviderKind.Quad9 => ("9.9.9.9", "dns.quad9.net", "/dns-query"),
             DnsProviderKind.AdGuard => ("94.140.14.14", "dns.adguard.com", "/dns-query"),
             DnsProviderKind.Mullvad => ("194.242.2.2", "dns.mullvad.net", "/dns-query"),

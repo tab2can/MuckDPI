@@ -35,6 +35,16 @@ public static class SettingsStore
             {
                 var json = File.ReadAllText(Path);
                 Current = JsonSerializer.Deserialize<AppSettings>(json, JsonOpts) ?? new AppSettings();
+                if (Current.SettingsVersion < 2)
+                {
+                    Current.FilterMode = FilterMode.Global;
+                    Current.DnsProvider = "yandex";
+                    if (Current.StrategyId is "auto" or "" or "split-sni" or "split-reverse" or "tiny-frag")
+                        Current.StrategyId = "turkey";
+                    Current.QuicMode = QuicMode.Off;
+                    Current.SettingsVersion = 2;
+                    Save();
+                }
             }
         }
         catch

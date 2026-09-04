@@ -40,6 +40,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         TuneCommand = new RelayCommand(TuneAsync, () => !Busy);
         SaveCommand = new RelayCommand(() => { Persist(); return Task.CompletedTask; });
         ProbeOneCommand = new RelayCommand(ProbeCustomAsync, () => !Busy);
+        ApplyTurkeyCommand = new RelayCommand(() => { ApplyTurkeyPreset(); return Task.CompletedTask; });
         Status = Loc.T("Protection is off", "Koruma kapalı");
         IspLine = Loc.T("ISP not detected yet", "ISS henüz algılanmadı");
         StrategyLine = DisplayStrategy();
@@ -67,6 +68,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public RelayCommand TuneCommand { get; }
     public RelayCommand SaveCommand { get; }
     public RelayCommand ProbeOneCommand { get; }
+    public RelayCommand ApplyTurkeyCommand { get; }
 
     public string Page
     {
@@ -338,6 +340,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         finally { Busy = false; }
     }
 
+    public void ApplyTurkeyPreset()
+    {
+        S.StrategyId = "turkey";
+        S.FilterMode = FilterMode.Global;
+        S.DnsProvider = "yandex";
+        S.EnableDnsProtect = true;
+        S.QuicMode = QuicMode.Off;
+        OnChanged(nameof(SelectedStrategyId));
+        OnChanged(nameof(SelectedFilter));
+        OnChanged(nameof(SelectedDns));
+        OnChanged(nameof(SelectedQuic));
+        OnChanged(nameof(EnableDnsProtect));
+        Persist();
+        TuneProgress = Loc.T(
+            "Applied Turkey profile: -5 + TTL 5 + Yandex 77.88.8.8:1253, all HTTPS except banks.",
+            "Türkiye profili uygulandı: -5 + TTL 5 + Yandex 77.88.8.8:1253, banka hariç tüm HTTPS.");
+    }
+
     public void Persist()
     {
         PullUiIntoSettings();
@@ -380,8 +400,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             var st = engine.Stats;
             var text = Loc.T(
-                $"seen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · fake {st.FakeSent:N0} · dns {st.DnsRewritten:N0} · quic-drop {st.QuicBlocked:N0} · learned {st.AutoLearned:N0}",
-                $"görülen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · sahte {st.FakeSent:N0} · dns {st.DnsRewritten:N0} · quic {st.QuicBlocked:N0} · öğrenilen {st.AutoLearned:N0}");
+                $"seen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · fake {st.FakeSent:N0} · dns-nat {st.DnsRedirected:N0} · doh {st.DnsRewritten:N0} · quic-drop {st.QuicBlocked:N0}",
+                $"görülen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · sahte {st.FakeSent:N0} · dns {st.DnsRedirected:N0} · doh {st.DnsRewritten:N0} · quic {st.QuicBlocked:N0}");
             System.Windows.Application.Current?.Dispatcher.Invoke(() => StatsLine = text);
         };
     }

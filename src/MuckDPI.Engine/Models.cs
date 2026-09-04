@@ -17,24 +17,28 @@ public enum QuicMode
 
 public enum DnsProviderKind
 {
+    Yandex,
     Cloudflare,
     Google,
     Quad9,
     AdGuard,
     Mullvad,
+    DohCloudflare,
+    DohGoogle,
     Off
 }
 
 public sealed class AppSettings
 {
+    public int SettingsVersion { get; set; } = 2;
     public string Language { get; set; } = "tr";
-    public string StrategyId { get; set; } = "auto";
+    public string StrategyId { get; set; } = "turkey";
     public string IspId { get; set; } = "auto";
-    public string DnsProvider { get; set; } = "cloudflare";
+    public string DnsProvider { get; set; } = "yandex";
     public bool EnableDnsProtect { get; set; } = true;
     public bool EnablePassiveDrop { get; set; } = true;
-    public FilterMode FilterMode { get; set; } = FilterMode.Smart;
-    public QuicMode QuicMode { get; set; } = QuicMode.BlockHostlist;
+    public FilterMode FilterMode { get; set; } = FilterMode.Global;
+    public QuicMode QuicMode { get; set; } = QuicMode.Off;
     public List<string> EnabledServices { get; set; } = new(ServiceCatalog.DefaultEnabled);
     public List<string> CustomHosts { get; set; } = [];
     public List<string> AutoHosts { get; set; } = [];
@@ -62,10 +66,12 @@ public sealed class Strategy
     public bool FakeWrongSeq { get; init; }
     public bool FakeWrongChecksum { get; init; }
     public bool FakeObfuscateSni { get; init; } = true;
+    public bool AutoTtl { get; init; }
     public int FakeRepeats { get; init; } = 1;
     public bool HttpObfuscate { get; init; }
-    public int MaxPayload { get; init; } = 1400;
+    public int MaxPayload { get; init; } = 1200;
     public int FirstPackets { get; init; } = 8;
+    public bool BlockQuic { get; init; }
 }
 
 public sealed class IspProfile
@@ -96,6 +102,7 @@ public sealed class EngineStats
     public long PacketsDesynced;
     public long FakeSent;
     public long DnsRewritten;
+    public long DnsRedirected;
     public long PassiveDropped;
     public long QuicBlocked;
     public long AutoLearned;

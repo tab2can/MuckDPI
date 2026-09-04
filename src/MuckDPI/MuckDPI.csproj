@@ -12,8 +12,8 @@
     <AssemblyName>MuckDPI</AssemblyName>
     <Product>MuckDPI</Product>
     <Company>tab2can</Company>
-    <Version>1.0.0</Version>
-    <InformationalVersion>1.0.0</InformationalVersion>
+    <Version>1.1.0</Version>
+    <InformationalVersion>1.1.0</InformationalVersion>
     <LangVersion>latest</LangVersion>
     <ApplicationTitle>MuckDPI</ApplicationTitle>
   </PropertyGroup>

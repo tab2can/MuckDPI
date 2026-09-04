@@ -6,26 +6,30 @@ ISS’nize göre ayarlanan, Windows için DPI aşımı. [GoodbyeDPI](https://git
 
 ![MuckDPI](docs/icon.png)
 
-## Neden GoodbyeDPI’den farklı?
+## Neden GoodbyeDPI-Turkey ile aynı dil?
 
-| Sorun | GoodbyeDPI | MuckDPI |
+Türkiye’de çalışan kombinasyon belgelenmiş durumda: `goodbyedpi.exe -5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253`. MuckDPI bunu varsayılan profil yapar, üstüne Superonline alt.1–3 ve TTNet `-9` profillerini GUI’den seçtirir.
+
+| | GoodbyeDPI-Turkey | MuckDPI 1.1 |
 | --- | --- | --- |
-| Her ISS aynı değil | Elle `-5`…`-9` | ASN ile ISS profili + hattınızda sihirbaz |
-| Ana site açılır, özellik bozulur | Çoğu zaman yalnızca SNI | YouTube, Discord, Instagram **CDN/API** host paketleri |
-| DNS zehirlemesi | İsteğe bağlı yönlendirme | DoH (1.1.1.1 / 8.8.8.8 doğrudan IP) |
-| QUIC her şeyi kırar | Global `-q` | Yalnızca gereken servislerde |
-| Banka / e-Devlet | Global desync bozabilir | Akıllı host listesi + hariç tutma |
-| Arayüz | Konsol | Tepsi, günlük, tarama, Türkçe UI |
+| DNS | `77.88.8.8:1253` paket yönlendirme | Aynı NAT (DoH yedek) |
+| Desync | `-5` + `--set-ttl 5` | Aynı; ISS’ye göre alt profiller |
+| Kapsam | Tüm HTTPS | Tüm HTTPS, banka/e-Devlet hariç |
+| Superonline | 6 ayrı `.cmd` | alt.1 / alt.2 / alt.3 menüde |
+| YouTube zayıfsa | `-9` | Güçlü (-9) + QUIC düşürme |
+| Arayüz | Konsol / servis | Türkçe GUI, sihirbaz, tepsi |
+
+Kaynak kodu kopyalanmadı; komut satırı profilleri ve DNS NAT davranışı herkese açık belgelerden uygulandı.
 
 IP seviyesinde (hiç paket yok, yalnızca zaman aşımı) engel DPI ile çözülmez. O durumda VPN gerekir; uygulama bunu gizlemez.
 
 ## Ne yapar?
 
+- **DNS:** UDP/53 sorgularını Yandex `77.88.8.8:1253` adresine kaydırır (ISS 53. portu kesse bile). DoH isteğe bağlı yedek.
+- **Aktif DPI:** Türkiye önerileni `-5` (2 bayt + ters parça) + sahte TTL 5
 - **Pasif DPI:** sahte RST / yönlendirme paketlerini düşürür
-- **Aktif DPI:** TLS ClientHello’yu SNI sınırından böler, isteğe bağlı ters sıra, sahte TTL / yanlış seq / checksum
-- **DNS:** UDP/53 sorgularını Cloudflare, Google, Quad9, AdGuard veya Mullvad DoH ile yanıtlar
-- **QUIC:** YouTube / Instagram / TikTok gibi servislerde TCP’ye düşürür (HTTP/3 DPI’si bozmasın diye)
-- **Öğrenme:** RST görülen hostları akıllı listeye ekler
+- **Kapsam:** banka ve e-Devlet hariç tüm HTTPS (yalnızca ana alan adı yetmez)
+- **QUIC:** varsayılan kapalı; Güçlü (-9) profilinde düşürülür
 
 Hazır ISS profilleri: Türk Telekom, Superonline, Vodafone, TurkNet, Türksat Kablonet, Millenicom.
 
@@ -62,6 +66,7 @@ Ayarlar `%APPDATA%\MuckDPI\settings.json` veya Muck Store `MUCK_SETTINGS_PATH`.
 
 - Motor **kendi kodumuz**; GoodbyeDPI kaynak kodu kopyalanmadı. Yöntemler herkese açık DPI literatürü ve zapret/GoodbyeDPI belgelerindeki tekniklerdir.
 - Paket içindeki **WinDivert** LGPLv3 / GPLv2 ([basil00/WinDivert](https://github.com/basil00/WinDivert)). Lisans metni: `third_party/WinDivert.LICENSE`.
+- Türkiye profilleri [GoodbyeDPI-Turkey](https://github.com/cagritaskn/GoodbyeDPI-Turkey) komut dosyalarındaki herkese açık argümanlardan esinlenir (`-5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253`). Kaynak kodu kopyalanmaz.
 - MuckDPI kaynak kodu **MIT**.
 
 Bu yazılım sansür / DPI aşımı içindir. Ağınızın ve yasaların sorumluluğu size aittir.

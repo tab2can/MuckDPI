@@ -6,6 +6,80 @@ public static class StrategyCatalog
     [
         new Strategy
         {
+            Id = "turkey",
+            Name = "Turkey recommended (-5 + TTL 5)",
+            NameTr = "Türkiye önerilen (-5 + TTL 5)",
+            Description = "GoodbyeDPI-Turkey default: reverse fragment, split at 2, fake TTL 5. Use with Yandex DNS :1253.",
+            DescriptionTr = "GoodbyeDPI-Turkey varsayılanı: ters parçalama, 2 bayt bölme, sahte TTL 5. Yandex DNS 1253 ile kullanın.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            ReverseFragments = true,
+            SendFake = true,
+            FakeTtl = 5,
+            FakeObfuscateSni = true,
+            MaxPayload = 1200
+        },
+        new Strategy
+        {
+            Id = "so-ttl3",
+            Name = "Superonline alt.1 (TTL 3)",
+            NameTr = "Superonline alt.1 (TTL 3)",
+            Description = "Only fake TTL 3. Light Superonline / Discord-update profile.",
+            DescriptionTr = "Yalnızca sahte TTL 3. Hafif Superonline / Discord güncelleme profili.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            SendFake = true,
+            FakeTtl = 3,
+            ReverseFragments = false,
+            MaxPayload = 1200
+        },
+        new Strategy
+        {
+            Id = "so-mode5",
+            Name = "Superonline alt.2 (mode -5)",
+            NameTr = "Superonline alt.2 (mod -5)",
+            Description = "Reverse fragment + auto TTL. No DNS in the original script; we still redirect DNS.",
+            DescriptionTr = "Ters parçalama + otomatik TTL. Orijinal script'te DNS yok; biz yine de DNS yönlendiririz.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            ReverseFragments = true,
+            SendFake = true,
+            AutoTtl = true,
+            FakeTtl = 5,
+            MaxPayload = 1200
+        },
+        new Strategy
+        {
+            Id = "so-ttl3-dns",
+            Name = "Superonline alt.3 (TTL 3 + DNS)",
+            NameTr = "Superonline alt.3 (TTL 3 + DNS)",
+            Description = "Fake TTL 3 plus DNS redirect. Strong on Superonline Discord.",
+            DescriptionTr = "Sahte TTL 3 ve DNS yönlendirme. Superonline Discord'da güçlü.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            SendFake = true,
+            FakeTtl = 3,
+            MaxPayload = 1200
+        },
+        new Strategy
+        {
+            Id = "mode9",
+            Name = "Strong / TTNet YouTube (-9)",
+            NameTr = "Güçlü / TTNet YouTube (-9)",
+            Description = "Wrong seq + checksum + reverse frag + QUIC drop. Use when -5 is not enough.",
+            DescriptionTr = "Yanlış sıra + sağlama + ters parça + QUIC düşürme. -5 yetmezse.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            ReverseFragments = true,
+            SendFake = true,
+            FakeWrongSeq = true,
+            FakeWrongChecksum = true,
+            FakeRepeats = 2,
+            BlockQuic = true,
+            MaxPayload = 1200
+        },
+        new Strategy
+        {
             Id = "split-sni",
             Name = "SNI split",
             NameTr = "SNI bölme",
@@ -100,7 +174,7 @@ public static class StrategyCatalog
         All.FirstOrDefault(s => s.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? All[0];
 
     public static IReadOnlyList<string> TuneOrder { get; } =
-        ["split-sni", "split-reverse", "tiny-frag", "fake-ttl", "fake-seq", "http-mix", "aggressive"];
+        ["turkey", "so-ttl3", "so-mode5", "so-ttl3-dns", "mode9", "split-reverse", "fake-seq", "aggressive"];
 }
 
 public static class IspCatalog
@@ -113,10 +187,10 @@ public static class IspCatalog
             Name = "Türk Telekom",
             Asns = [9121, 47331],
             Keywords = ["turk telekom", "türk telekom", "ttnet", "ttnet", "turktelekom"],
-            DefaultStrategyId = "split-reverse",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = true,
-            NotesTr = "SNI tabanlı aktif DPI. Ters bölme + DoH çoğu hatta yeter. Sahte TTL bazı hatlarda site bozar, sihirbaz karar verir.",
-            NotesEn = "SNI-based active DPI. Reverse split plus DoH is enough on most lines. Fake TTL can break sites; the wizard decides."
+            NotesTr = "GoodbyeDPI-Turkey önerileni: -5 + TTL 5 + Yandex :1253. YouTube için yetmezse Güçlü (-9) deneyin.",
+            NotesEn = "GoodbyeDPI-Turkey recommended: -5 + TTL 5 + Yandex :1253. If YouTube still fails, try Strong (-9)."
         },
         new IspProfile
         {
@@ -124,10 +198,10 @@ public static class IspCatalog
             Name = "Turkcell Superonline",
             Asns = [34984, 16135],
             Keywords = ["superonline", "turkcell", "tellcom"],
-            DefaultStrategyId = "tiny-frag",
+            DefaultStrategyId = "so-ttl3-dns",
             DnsPoisonLikely = true,
-            NotesTr = "DNS müdahalesi ve erken paket incelemesi yaygın. Küçük parçalama + DoH önerilir.",
-            NotesEn = "DNS interception and early-packet inspection are common. Tiny fragments plus DoH are recommended."
+            NotesTr = "Discord update failed için alt.1 (TTL 3) veya alt.3 (TTL 3 + DNS). Fiberde sırayla deneyin.",
+            NotesEn = "For Discord update failed try alt.1 (TTL 3) or alt.3 (TTL 3 + DNS). Try them in order on fiber."
         },
         new IspProfile
         {
@@ -135,7 +209,7 @@ public static class IspCatalog
             Name = "Vodafone",
             Asns = [15897, 8386, 15924, 20978],
             Keywords = ["vodafone", "vodafone net"],
-            DefaultStrategyId = "fake-seq",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = true,
             NotesTr = "Sahte sıra/sağlama + ters SNI bölme birçok Vodafone hattında daha istikrarlı.",
             NotesEn = "Fake sequence/checksum plus reverse SNI split is more stable on many Vodafone lines."
@@ -146,7 +220,7 @@ public static class IspCatalog
             Name = "TurkNet",
             Asns = [12735],
             Keywords = ["turknet", "turk net"],
-            DefaultStrategyId = "split-sni",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = false,
             NotesTr = "Daha hafif DPI. SNI bölme çoğu zaman yeter; yine de CDN host listesi şart.",
             NotesEn = "Lighter DPI. SNI split is often enough; CDN host lists are still required."
@@ -157,7 +231,7 @@ public static class IspCatalog
             Name = "Türksat Kablonet",
             Asns = [47524],
             Keywords = ["türksat", "turksat", "kablonet"],
-            DefaultStrategyId = "fake-ttl",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = true,
             NotesTr = "Kablo şebekelerinde sahte TTL + bölme sık kullanılır.",
             NotesEn = "Cable networks often need fake TTL plus split."
@@ -168,10 +242,10 @@ public static class IspCatalog
             Name = "Millenicom",
             Asns = [34296],
             Keywords = ["millenicom"],
-            DefaultStrategyId = "split-reverse",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = true,
-            NotesTr = "Türk Telekom omurgasına yakın davranış. Ters bölme iyi bir başlangıç.",
-            NotesEn = "Behaves close to Türk Telekom backbone. Reverse split is a good start."
+            NotesTr = "Türk Telekom omurgasına yakın. Türkiye önerilen profili ile başlayın.",
+            NotesEn = "Close to Türk Telekom backbone. Start with the Turkey recommended profile."
         },
         new IspProfile
         {
@@ -179,10 +253,10 @@ public static class IspCatalog
             Name = "Universal",
             Asns = [],
             Keywords = [],
-            DefaultStrategyId = "split-reverse",
+            DefaultStrategyId = "turkey",
             DnsPoisonLikely = true,
-            NotesTr = "ISS tanınmadı. Sihirbaz tüm stratejileri sizin hattınızda dener.",
-            NotesEn = "ISP not recognized. The wizard will try every strategy on your line."
+            NotesTr = "ISS tanınmadı. Türkiye önerilen profili (Yandex :1253 + TTL 5) çoğu hatta çalışır; sihirbaz sırayla dener.",
+            NotesEn = "ISP not recognized. The Turkey recommended profile (Yandex :1253 + TTL 5) works on most lines; the wizard tries the rest."
         }
     ];
 
@@ -371,12 +445,15 @@ public sealed class HostMatcher
     private readonly List<string> _suffixes = [];
     private readonly HashSet<string> _exclude = new(StringComparer.OrdinalIgnoreCase);
 
+    private readonly bool _global;
+
     public HostMatcher(AppSettings settings)
     {
+        _global = settings.FilterMode == FilterMode.Global;
         foreach (var ex in ServiceCatalog.ExcludeHosts)
             _exclude.Add(ex);
 
-        if (settings.FilterMode == FilterMode.Global)
+        if (_global)
             return;
 
         foreach (var pack in ServiceCatalog.All)
@@ -399,10 +476,11 @@ public sealed class HostMatcher
 
     public bool ShouldTouch(string? host)
     {
-        if (string.IsNullOrWhiteSpace(host)) return false;
+        if (string.IsNullOrWhiteSpace(host))
+            return _global;
         host = host.Trim().TrimEnd('.').ToLowerInvariant();
         if (IsExcluded(host)) return false;
-        if (_exact.Count == 0) return true; // global
+        if (_global || _exact.Count == 0) return true;
         if (_exact.Contains(host)) return true;
         foreach (var s in _suffixes)
         {
@@ -425,7 +503,8 @@ public sealed class HostMatcher
     {
         if (settings.QuicMode == QuicMode.Off) return false;
         if (settings.QuicMode == QuicMode.BlockAll) return true;
-        if (string.IsNullOrEmpty(host)) return false;
+        if (string.IsNullOrEmpty(host))
+            return settings.QuicMode == QuicMode.BlockAll || _global && settings.QuicMode == QuicMode.BlockHostlist;
         if (!ShouldTouch(host)) return false;
         foreach (var pack in ServiceCatalog.All)
         {

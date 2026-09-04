@@ -69,7 +69,7 @@
           <!-- HOME -->
           <StackPanel Visibility="{Binding HomeVisible}">
             <TextBlock Text="Koruma" FontSize="28" FontWeight="SemiBold"/>
-            <TextBlock Text="GoodbyeDPI'nin kırdığı yer: yalnızca ana alan adı açılır, video / CDN / API / ses kalır. MuckDPI servis paketleri, DoH ve ISS profiliyle bunu kapatır."
+            <TextBlock Text="Türkiye'de çalışan yöntem GoodbyeDPI-Turkey'deki gibi: UDP/53'ü Yandex 77.88.8.8:1253'e çevir, TLS'i 2 baytta ters böl, sahte TTL 5. DoH varsayılan değil çünkü ISS onu da kesebilir."
                        Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,8,0,20"/>
 
             <Grid>
@@ -84,7 +84,8 @@
                   <TextBlock Text="{Binding StrategyLine}" Foreground="{StaticResource AccentBrush}" Margin="0,6,0,16"/>
                   <StackPanel Orientation="Horizontal">
                     <Button Content="Korumayı başlat" Style="{StaticResource PrimaryBtn}" Command="{Binding StartCommand}" Margin="0,0,10,0"/>
-                    <Button Content="Korumayı durdur" Style="{StaticResource GhostBtn}" Command="{Binding StopCommand}"/>
+                    <Button Content="Korumayı durdur" Style="{StaticResource GhostBtn}" Command="{Binding StopCommand}" Margin="0,0,10,0"/>
+                    <Button Content="Türkiye profili" Style="{StaticResource GhostBtn}" Command="{Binding ApplyTurkeyCommand}"/>
                   </StackPanel>
                   <TextBlock Text="{Binding Error}" Foreground="{StaticResource BadBrush}" Margin="0,12,0,0" TextWrapping="Wrap"/>
                   <TextBlock Text="{Binding StatsLine}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,16,0,0" TextWrapping="Wrap"/>
@@ -92,9 +93,9 @@
               </Border>
               <Border Grid.Column="1" Style="{StaticResource Card}">
                 <StackPanel>
-                  <TextBlock Text="Neden daha iyi?" FontWeight="SemiBold" FontSize="16"/>
+                  <TextBlock Text="Neden çalışır?" FontWeight="SemiBold" FontSize="16"/>
                   <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
-                             Text="• ISS algılama (ASN) ve hazır profiller&#10;• Sihirbaz: hattınızda strateji denemesi&#10;• YouTube, Discord, Instagram CDN/API hostları&#10;• DNS zehirlemesine karşı DoH&#10;• QUIC yalnızca gereken servislerde&#10;• Akıllı host listesi: banka/e-Devlet dokunulmaz"/>
+                             Text="• DNS: 53. portu ISS keser → Yandex 1253. porta kaydırılır&#10;• Desync: -5 (ters parça + 2 bayt) + sahte TTL 5&#10;• Kapsam: banka/e-Devlet hariç tüm HTTPS (host listesi yetmez)&#10;• Superonline: alt.1–3 sırayla&#10;• TTNet/YouTube: Güçlü (-9)&#10;• Kaspersky WinDivert'i öldürür; Defender kullanın"/>
                 </StackPanel>
               </Border>
             </Grid>
@@ -104,7 +105,7 @@
           <StackPanel Visibility="{Binding WizardVisible}">
             <TextBlock Text="ISS sihirbazı" FontSize="28" FontWeight="SemiBold"/>
             <TextBlock Margin="0,8,0,20" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                       Text="Önce ISS'nizi bulun, sonra sihirbaz YouTube / Discord / Instagram / X / Spotify üzerinden hangi desync yönteminin hattınızda çalıştığını ölçer."/>
+                       Text="GoodbyeDPI-Turkey komut dosyalarının karşılığı. Önce Türkiye önerileni, Superonline'da Discord update failed ise alt.1 / alt.3, YouTube açılmazsa Güçlü (-9)."/>
             <Border Style="{StaticResource Card}" Margin="0,0,0,14">
               <StackPanel>
                 <TextBlock Text="ISS" FontWeight="SemiBold"/>
@@ -121,6 +122,11 @@
                 <TextBlock Text="Strateji" FontWeight="SemiBold" Margin="0,16,0,0"/>
                 <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedStrategyId}" SelectedValuePath="Tag">
                   <ComboBoxItem Tag="auto" Content="Otomatik (ISS profili)"/>
+                  <ComboBoxItem Tag="turkey" Content="Türkiye önerilen (-5 + TTL 5)"/>
+                  <ComboBoxItem Tag="so-ttl3" Content="Superonline alt.1 (TTL 3)"/>
+                  <ComboBoxItem Tag="so-mode5" Content="Superonline alt.2 (mod -5)"/>
+                  <ComboBoxItem Tag="so-ttl3-dns" Content="Superonline alt.3 (TTL 3 + DNS)"/>
+                  <ComboBoxItem Tag="mode9" Content="Güçlü / TTNet YouTube (-9)"/>
                   <ComboBoxItem Tag="split-sni" Content="SNI bölme"/>
                   <ComboBoxItem Tag="split-reverse" Content="Ters SNI bölme"/>
                   <ComboBoxItem Tag="tiny-frag" Content="Küçük parçalar"/>
@@ -159,9 +165,9 @@
                 <TextBox Margin="0,10,0,0" Height="120" AcceptsReturn="True" TextWrapping="Wrap"
                          VerticalScrollBarVisibility="Auto" Text="{Binding CustomHostsText, UpdateSourceTrigger=PropertyChanged}"/>
                 <ComboBox Margin="0,14,0,0" SelectedValue="{Binding SelectedFilter}" SelectedValuePath="Tag">
-                  <ComboBoxItem Tag="Smart" Content="Akıllı: paketler + öğrenilen hostlar (önerilen)"/>
+                  <ComboBoxItem Tag="Global" Content="Tüm HTTPS, banka/e-Devlet hariç (Türkiye önerilen)"/>
+                  <ComboBoxItem Tag="Smart" Content="Akıllı: paketler + öğrenilen hostlar"/>
                   <ComboBoxItem Tag="Hostlist" Content="Yalnızca seçili paketler"/>
-                  <ComboBoxItem Tag="Global" Content="Tüm HTTPS (banka sitelerini bozabilir)"/>
                 </ComboBox>
                 <Button Content="Kaydet" Style="{StaticResource PrimaryBtn}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,14,0,0"/>
               </StackPanel>
@@ -172,25 +178,27 @@
           <StackPanel Visibility="{Binding DnsVisible}">
             <TextBlock Text="DNS koruması" FontSize="28" FontWeight="SemiBold"/>
             <TextBlock Margin="0,8,0,16" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
-                       Text="ISS DNS zehirlemesi CDN adreslerini sahte IP'ye çevirir. Sayfa açılır, resim ve video açılmaz. MuckDPI UDP/53 sorgularını DoH ile çözer (1.1.1.1 / 8.8.8.8 doğrudan IP)."/>
+                       Text="Türkiye ISS'leri UDP/53'ü yakalar. GoodbyeDPI-Turkey bu yüzden Yandex DNS'i 1253. porta kaydırır. DoH yedek; ISS HTTPS DNS'i de kesiyorsa 1253 daha güvenilir."/>
             <Border Style="{StaticResource Card}">
               <StackPanel>
-                <CheckBox Content="DoH ile DNS korumasını aç" IsChecked="{Binding EnableDnsProtect}"/>
-                <TextBlock Text="Sağlayıcı" FontWeight="SemiBold" Margin="0,12,0,0"/>
+                <CheckBox Content="DNS korumasını aç" IsChecked="{Binding EnableDnsProtect}"/>
+                <TextBlock Text="Yöntem" FontWeight="SemiBold" Margin="0,12,0,0"/>
                 <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedDns}" SelectedValuePath="Tag">
-                  <ComboBoxItem Tag="cloudflare" Content="Cloudflare (1.1.1.1)"/>
-                  <ComboBoxItem Tag="google" Content="Google (8.8.8.8)"/>
-                  <ComboBoxItem Tag="quad9" Content="Quad9 (9.9.9.9)"/>
-                  <ComboBoxItem Tag="adguard" Content="AdGuard"/>
-                  <ComboBoxItem Tag="mullvad" Content="Mullvad"/>
+                  <ComboBoxItem Tag="yandex" Content="Yandex 77.88.8.8:1253 (Türkiye önerilen)"/>
+                  <ComboBoxItem Tag="cloudflare" Content="Cloudflare 1.1.1.1:53 (ISS 53'ü kesebilir)"/>
+                  <ComboBoxItem Tag="google" Content="Google 8.8.8.8:53"/>
+                  <ComboBoxItem Tag="quad9" Content="Quad9 9.9.9.9:53"/>
+                  <ComboBoxItem Tag="doh-cloudflare" Content="DoH Cloudflare (yedek)"/>
+                  <ComboBoxItem Tag="doh-google" Content="DoH Google (yedek)"/>
+                  <ComboBoxItem Tag="off" Content="Kapalı"/>
                 </ComboBox>
                 <CheckBox Content="Pasif DPI RST / sahte yönlendirmeleri düşür" IsChecked="{Binding EnablePassiveDrop}" Margin="0,16,0,0"/>
                 <TextBlock Text="QUIC / HTTP3" FontWeight="SemiBold" Margin="0,16,0,0"/>
                 <ComboBox Margin="0,8,0,0" SelectedValue="{Binding SelectedQuic}" SelectedValuePath="Tag">
-                  <ComboBoxItem Tag="BlockHostlist" Content="YouTube / IG / TikTok için QUIC düşür (önerilen)"/>
-                  <ComboBoxItem Tag="FakeHostlist" Content="Host listesinde sahte QUIC dene"/>
-                  <ComboBoxItem Tag="Off" Content="QUIC'e dokunma"/>
-                  <ComboBoxItem Tag="BlockAll" Content="Tüm QUIC'i düşür"/>
+                  <ComboBoxItem Tag="Off" Content="QUIC'e dokunma (Türkiye -5)"/>
+                  <ComboBoxItem Tag="BlockHostlist" Content="YouTube / IG / TikTok için QUIC düşür"/>
+                  <ComboBoxItem Tag="BlockAll" Content="Tüm QUIC'i düşür (mod -9)"/>
+                  <ComboBoxItem Tag="FakeHostlist" Content="Host listesinde sahte QUIC"/>
                 </ComboBox>
                 <Button Content="Kaydet" Style="{StaticResource PrimaryBtn}" Command="{Binding SaveCommand}" HorizontalAlignment="Left" Margin="0,16,0,0"/>
               </StackPanel>
