@@ -47,6 +47,9 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           dotnet publish src/MuckDPI/MuckDPI.csproj -c Release -r win-x64 --self-contained true -o dist/app `
             -p:DebugType=None -p:DebugSymbols=false -p:PublishSingleFile=false
+          dotnet publish src/MuckDPI.Service/MuckDPI.Service.csproj -c Release -r win-x64 --self-contained true -o dist/service `
+            -p:DebugType=None -p:DebugSymbols=false -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          Copy-Item dist/service/MuckDPI.Service.exe dist/app/MuckDPI.Service.exe -Force
           Copy-Item native/WinDivert/x64/WinDivert.dll dist/app/WinDivert.dll -Force
           Copy-Item native/WinDivert/x64/WinDivert64.sys dist/app/WinDivert64.sys -Force
           Copy-Item LICENSE, README.md, THIRD_PARTY.md, muck.json dist/app/ -Force

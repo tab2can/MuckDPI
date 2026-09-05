@@ -1,10 +1,10 @@
 {
   "id": "com.tab2can.muckdpi",
   "name": "MuckDPI",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "license": "MIT",
-  "summary": "ISP-aware DPI circumvention for Windows. Unblocks site features GoodbyeDPI often leaves broken.",
-  "description": "MuckDPI is a Windows DPI circumvention app that detects your ISP, picks a matching desync strategy, protects DNS with DoH, and applies host packs for CDNs and APIs so YouTube, Discord, Instagram and similar services work beyond the landing page.",
+  "summary": "Windows DPI circumvention that tunes on first run and stays as a background service.",
+  "description": "MuckDPI detects your ISP, tests blocked sites, applies the best desync profile system-wide, and keeps running as a Windows service from boot. Re-run with -test. No tray app after setup.",
   "categories": ["network", "utilities"],
   "tags": ["dpi", "goodbyeDPI", "zapret", "windows", "muck-store"],
   "source": { "github": "tab2can/MuckDPI" },
@@ -38,12 +38,12 @@
     "%APPDATA%\\MuckStore\\config\\com.tab2can.muckdpi.json"
   ],
   "update": { "channel": "github-releases", "includePrerelease": false },
-  "watchdog": { "onCrash": "notify", "maxRestarts": 2 },
+  "watchdog": { "onCrash": "notify", "maxRestarts": 0 },
   "i18n": {
     "tr": {
       "name": "MuckDPI",
-      "summary": "ISS'nize göre ayarlanan Windows DPI aşımı. GoodbyeDPI'nin açık bırakıp çalıştırmadığı site özelliklerini de toparlar.",
-      "description": "MuckDPI, ISS'nizi tanır, uygun desync stratejisini seçer, DNS'i DoH ile korur ve YouTube, Discord, Instagram gibi servislerin CDN/API alan adlarını da kapsar."
+      "summary": "İlk açılışta hattı tarar, sonra Windows servisi olarak arka planda kalır.",
+      "description": "MuckDPI ISS'nizi tanır, yasaklı sitelerde yöntemleri dener, en iyi profili tüm sisteme uygular ve açılıştan itibaren Windows servisi olarak çalışır. Yeniden tarama: -test."
     }
   },
   "ui": {

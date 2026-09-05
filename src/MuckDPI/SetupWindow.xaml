@@ -1,0 +1,24 @@
+<Window x:Class="MuckDPI.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="MuckDPI"
+        Width="380" Height="148"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        Background="{StaticResource BgBrush}"
+        ShowInTaskbar="True"
+        Topmost="True"
+        MouseLeftButtonDown="Drag"
+        Closing="OnClosing">
+  <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1" Padding="22,18">
+    <StackPanel>
+      <TextBlock Text="MuckDPI" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource AccentBrush}"/>
+      <TextBlock Text="{Binding Headline}" Margin="0,10,0,0" TextWrapping="Wrap" FontSize="14"/>
+      <ProgressBar Height="8" Margin="0,14,0,0" Minimum="0" Maximum="100"
+                   Value="{Binding Percent, Mode=OneWay}" Foreground="{StaticResource AccentBrush}"
+                   Background="{StaticResource Panel2Brush}" BorderThickness="0"/>
+      <TextBlock Text="{Binding Detail}" Margin="0,10,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+    </StackPanel>
+  </Border>
+</Window>

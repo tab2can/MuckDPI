@@ -264,10 +264,102 @@ internal static class HttpHost
 
 internal static class QuicInitial
 {
+    /// <summary>
+    /// QUIC long header (Initial/Handshake, 0b11) or short header (1-RTT, 0b01).
+    /// Leaves STUN/DTLS (0b00) alone so Discord voice on UDP/443 still works.
+    /// </summary>
     public static bool LooksLikeQuic(ReadOnlySpan<byte> udpPayload)
     {
-        if (udpPayload.Length < 8) return false;
-        var b = udpPayload[0];
-        return (b & 0xC0) == 0xC0; // long header
+        if (udpPayload.Length < 2) return false;
+        var headerForm = udpPayload[0] & 0xC0;
+        return headerForm is 0xC0 or 0x40;
+    }
+}
+
+internal static class PacketReply
+{
+    public static bool IsPublicInternet(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip)) return false;
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            return !ip.IsIPv6LinkLocal && !ip.IsIPv6SiteLocal && !ip.IsIPv6Multicast;
+        var b = ip.GetAddressBytes();
+        if (b[0] == 10) return false;
+        if (b[0] == 127) return false;
+        if (b[0] == 192 && b[1] == 168) return false;
+        if (b[0] == 172 && b[1] is >= 16 and <= 31) return false;
+        if (b[0] == 169 && b[1] == 254) return false;
+        return true;
+    }
+
+    public static byte[] InboundRst(ReadOnlySpan<byte> original, in ParsedPacket pkt)
+    {
+        var ipLen = pkt.IpHeaderLength;
+        var total = ipLen + 20;
+        var rst = new byte[total];
+        original[..ipLen].CopyTo(rst);
+        if (!pkt.IsIPv6)
+        {
+            original.Slice(16, 4).CopyTo(rst.AsSpan(12));
+            original.Slice(12, 4).CopyTo(rst.AsSpan(16));
+            rst[8] = 64;
+            rst[10] = 0;
+            rst[11] = 0;
+            PacketMutator.SetIpv4Length(rst, total);
+        }
+        else
+        {
+            original.Slice(24, 16).CopyTo(rst.AsSpan(8));
+            original.Slice(8, 16).CopyTo(rst.AsSpan(24));
+            rst[7] = 64;
+            PacketMutator.SetIpv6PayloadLength(rst, 20);
+        }
+
+        var th = ipLen;
+        BinaryPrimitives.WriteUInt16BigEndian(rst.AsSpan(th), pkt.DstPort);
+        BinaryPrimitives.WriteUInt16BigEndian(rst.AsSpan(th + 2), pkt.SrcPort);
+        var seq = pkt.Ack != 0 ? pkt.Ack : pkt.Seq;
+        uint add = pkt.TcpSyn ? 1u : (uint)pkt.PayloadLength;
+        if (add == 0) add = 1;
+        BinaryPrimitives.WriteUInt32BigEndian(rst.AsSpan(th + 4), seq);
+        BinaryPrimitives.WriteUInt32BigEndian(rst.AsSpan(th + 8), pkt.Seq + add);
+        rst[th + 12] = 0x50;
+        rst[th + 13] = 0x14;
+        return rst;
+    }
+
+    public static byte[] IcmpUnreachable(ReadOnlySpan<byte> original, in ParsedPacket pkt)
+    {
+        if (pkt.IsIPv6) return Icmpv6Unreachable(original, pkt);
+        var quote = Math.Min(original.Length, pkt.IpHeaderLength + 8);
+        var total = 20 + 8 + quote;
+        var p = new byte[total];
+        p[0] = 0x45;
+        p[8] = 64;
+        p[9] = 1;
+        original.Slice(16, 4).CopyTo(p.AsSpan(12));
+        original.Slice(12, 4).CopyTo(p.AsSpan(16));
+        PacketMutator.SetIpv4Length(p, total);
+        p[20] = 3;
+        p[21] = 3;
+        original[..quote].CopyTo(p.AsSpan(28));
+        return p;
+    }
+
+    private static byte[] Icmpv6Unreachable(ReadOnlySpan<byte> original, in ParsedPacket pkt)
+    {
+        var quote = Math.Min(original.Length, pkt.IpHeaderLength + 8);
+        var total = 40 + 8 + quote;
+        var p = new byte[total];
+        original[..40].CopyTo(p);
+        original.Slice(24, 16).CopyTo(p.AsSpan(8));
+        original.Slice(8, 16).CopyTo(p.AsSpan(24));
+        p[6] = 58;
+        p[7] = 64;
+        PacketMutator.SetIpv6PayloadLength(p, 8 + quote);
+        p[40] = 1;
+        p[41] = 4;
+        original[..quote].CopyTo(p.AsSpan(48));
+        return p;
     }
 }

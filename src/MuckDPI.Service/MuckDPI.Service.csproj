@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MuckDPI.Service</RootNamespace>
+    <AssemblyName>MuckDPI.Service</AssemblyName>
+    <Product>MuckDPI</Product>
+    <Company>tab2can</Company>
+    <Version>1.3.0</Version>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <ProjectReference Include="..\MuckDPI.Engine\MuckDPI.Engine.csproj" />
+  </ItemGroup>
+  <Target Name="CopyWinDivert" AfterTargets="Build">
+    <PropertyGroup>
+      <WinDivertDir>$(MSBuildThisFileDirectory)..\..\native\WinDivert\x64</WinDivertDir>
+    </PropertyGroup>
+    <Copy SourceFiles="$(WinDivertDir)\WinDivert.dll;$(WinDivertDir)\WinDivert64.sys"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(WinDivertDir)\WinDivert.dll')" />
+  </Target>
+</Project>

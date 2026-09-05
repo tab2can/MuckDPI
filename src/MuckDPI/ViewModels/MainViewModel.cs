@@ -1,8 +1,8 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using MuckDPI.Engine;
 using MuckDPI.Services;
 
@@ -18,9 +18,11 @@ public sealed class RelayCommand(Func<Task> execute, Func<bool>? can = null) : I
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
+    private readonly Dispatcher _ui;
     private DpiEngine? _engine;
-    private string _page = "home";
     private bool _busy;
+    private bool _serviceMode;
+    private DispatcherTimer? _poll;
     private string _status = "";
     private string _ispLine = "";
     private string _strategyLine = "";
@@ -33,151 +35,81 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public MainViewModel()
     {
+        _ui = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
         S = SettingsStore.Current;
         StartCommand = new RelayCommand(StartAsync, () => !IsRunning && !Busy);
         StopCommand = new RelayCommand(StopAsync, () => IsRunning && !Busy);
-        DetectCommand = new RelayCommand(DetectAsync, () => !Busy);
         TuneCommand = new RelayCommand(TuneAsync, () => !Busy);
-        SaveCommand = new RelayCommand(() => { Persist(); return Task.CompletedTask; });
-        ProbeOneCommand = new RelayCommand(ProbeCustomAsync, () => !Busy);
-        ApplyTurkeyCommand = new RelayCommand(() => { ApplyTurkeyPreset(); return Task.CompletedTask; });
         Status = Loc.T("Protection is off", "Koruma kapalı");
         IspLine = Loc.T("ISP not detected yet", "ISS henüz algılanmadı");
         StrategyLine = DisplayStrategy();
-        CustomHostsText = string.Join(Environment.NewLine, S.CustomHosts);
-        ProbeUrl = "https://www.youtube.com/";
-        foreach (var pack in ServiceCatalog.All)
+        if (WindowsIntegration.IsServiceRunning)
         {
-            Services.Add(new ServiceToggle
-            {
-                Id = pack.Id,
-                Title = Loc.T(pack.Name, pack.NameTr),
-                Enabled = S.EnabledServices.Contains(pack.Id, StringComparer.OrdinalIgnoreCase)
-            });
+            _serviceMode = true;
+            EnsurePoll();
+            SyncFromService();
         }
     }
 
     public AppSettings S { get; }
-    public ObservableCollection<ServiceToggle> Services { get; } = [];
-    public IReadOnlyList<Strategy> Strategies => StrategyCatalog.All;
-    public IReadOnlyList<IspProfile> Isps => IspCatalog.All;
 
     public RelayCommand StartCommand { get; }
     public RelayCommand StopCommand { get; }
-    public RelayCommand DetectCommand { get; }
     public RelayCommand TuneCommand { get; }
-    public RelayCommand SaveCommand { get; }
-    public RelayCommand ProbeOneCommand { get; }
-    public RelayCommand ApplyTurkeyCommand { get; }
 
-    public string Page
+    public bool IsRunning => _engine?.IsRunning == true || (_serviceMode && WindowsIntegration.IsServiceRunning);
+    public bool Busy
     {
-        get => _page;
-        set { _page = value; OnChanged(); OnChanged(nameof(HomeVisible)); OnChanged(nameof(WizardVisible)); OnChanged(nameof(ServicesVisible)); OnChanged(nameof(DnsVisible)); OnChanged(nameof(ProbeVisible)); OnChanged(nameof(LogVisible)); OnChanged(nameof(SettingsVisible)); }
-    }
-
-    public Visibility HomeVisible => V("home");
-    public Visibility WizardVisible => V("wizard");
-    public Visibility ServicesVisible => V("services");
-    public Visibility DnsVisible => V("dns");
-    public Visibility ProbeVisible => V("probe");
-    public Visibility LogVisible => V("log");
-    public Visibility SettingsVisible => V("settings");
-    private Visibility V(string id) => Page == id ? Visibility.Visible : Visibility.Collapsed;
-
-    public bool IsRunning => _engine?.IsRunning == true;
-    public bool Busy { get => _busy; set { _busy = value; OnChanged(); StartCommand.Raise(); StopCommand.Raise(); DetectCommand.Raise(); TuneCommand.Raise(); } }
-    public string Status { get => _status; set { _status = value; OnChanged(); } }
-    public string IspLine { get => _ispLine; set { _ispLine = value; OnChanged(); } }
-    public string StrategyLine { get => _strategyLine; set { _strategyLine = value; OnChanged(); } }
-    public string LogText { get => _logText; set { _logText = value; OnChanged(); } }
-    public string StatsLine { get => _statsLine; set { _statsLine = value; OnChanged(); } }
-    public string TuneProgress { get => _tuneProgress; set { _tuneProgress = value; OnChanged(); } }
-    public string? Error { get => _error; set { _error = value; OnChanged(); } }
-    public string CustomHostsText { get; set; }
-    public string ProbeUrl { get; set; }
-    public string ProbeResult { get => _probeResult; set { _probeResult = value; OnChanged(); } }
-    private string _probeResult = "";
-
-    public string SelectedIspId
-    {
-        get => S.IspId;
-        set { S.IspId = value; OnChanged(); StrategyLine = DisplayStrategy(); }
-    }
-
-    public string SelectedStrategyId
-    {
-        get => S.StrategyId;
-        set { S.StrategyId = value; OnChanged(); StrategyLine = DisplayStrategy(); }
-    }
-
-    public string SelectedDns
-    {
-        get => S.DnsProvider;
-        set { S.DnsProvider = value; OnChanged(); }
-    }
-
-    public string SelectedFilter
-    {
-        get => S.FilterMode.ToString();
-        set
+        get => _busy;
+        set => OnUi(() =>
         {
-            if (Enum.TryParse<FilterMode>(value, out var m)) S.FilterMode = m;
+            _busy = value;
             OnChanged();
-        }
+            StartCommand.Raise();
+            StopCommand.Raise();
+            TuneCommand.Raise();
+        });
     }
-
-    public string SelectedQuic
-    {
-        get => S.QuicMode.ToString();
-        set
-        {
-            if (Enum.TryParse<QuicMode>(value, out var m)) S.QuicMode = m;
-            OnChanged();
-        }
-    }
-
-    public bool LanguageTr
-    {
-        get => Loc.Tr;
-        set
-        {
-            Loc.Language = value ? "tr" : "en";
-            S.Language = Loc.Language;
-            OnChanged();
-            OnChanged(nameof(PowerLabel));
-            OnChanged(nameof(AccentStatus));
-            StrategyLine = DisplayStrategy();
-        }
-    }
-
-    public bool EnableDnsProtect
-    {
-        get => S.EnableDnsProtect;
-        set { S.EnableDnsProtect = value; OnChanged(); }
-    }
-
-    public bool EnablePassiveDrop
-    {
-        get => S.EnablePassiveDrop;
-        set { S.EnablePassiveDrop = value; OnChanged(); }
-    }
+    public string Status { get => _status; set => Set(ref _status, value); }
+    public string IspLine { get => _ispLine; set => Set(ref _ispLine, value); }
+    public string StrategyLine { get => _strategyLine; set => Set(ref _strategyLine, value); }
+    public string LogText { get => _logText; set => Set(ref _logText, value); }
+    public string StatsLine { get => _statsLine; set => Set(ref _statsLine, value); }
+    public string TuneProgress { get => _tuneProgress; set => Set(ref _tuneProgress, value); }
+    public string? Error { get => _error; set => OnUi(() => { _error = value; OnChanged(nameof(Error)); }); }
 
     public bool MinimizeToTray
     {
         get => S.MinimizeToTray;
-        set { S.MinimizeToTray = value; OnChanged(); }
+        set { S.MinimizeToTray = value; OnChanged(); SettingsStore.Save(); }
     }
 
-    public bool AutoStartEngine
+    public bool WindowsIntegrate
     {
-        get => S.AutoStartEngine;
-        set { S.AutoStartEngine = value; OnChanged(); }
+        get => S.WindowsIntegrate;
+        set
+        {
+            S.WindowsIntegrate = value;
+            S.AutoStartEngine = value;
+            OnChanged();
+            SettingsStore.Save();
+            try
+            {
+                if (value) WindowsIntegration.Install();
+                else
+                {
+                    WindowsIntegration.Uninstall();
+                    _serviceMode = false;
+                    RaiseRunning();
+                }
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+                AppendLog(ex.Message);
+            }
+        }
     }
-
-    public string PowerLabel => IsRunning
-        ? Loc.T("Stop protection", "Korumayı durdur")
-        : Loc.T("Start protection", "Korumayı başlat");
 
     public string AccentStatus => IsRunning
         ? Loc.T("Active", "Aktif")
@@ -189,21 +121,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
             Busy = true;
-            PullUiIntoSettings();
+            ApplyRuntimeDefaults();
+            S.AutoStartEngine = true;
             Persist();
-            StopEngine();
-            var cfg = EngineConfig.From(S);
-            _engine = new DpiEngine(cfg);
-            WireEngine(_engine);
-            await Task.Run(() => _engine.Start());
-            Status = Loc.T("Protection is on", "Koruma açık");
-            StrategyLine = DisplayStrategy();
-            OnChanged(nameof(IsRunning));
-            OnChanged(nameof(PowerLabel));
-            OnChanged(nameof(AccentStatus));
-            StartCommand.Raise();
-            StopCommand.Raise();
-            TrayService.ShowBalloon("MuckDPI", Loc.T("Protection started", "Koruma başladı"));
+            if (S.WindowsIntegrate && WindowsIntegration.ServiceExeExists)
+            {
+                await Task.Run(StopEngine).ConfigureAwait(true);
+                await Task.Run(() =>
+                {
+                    WindowsIntegration.Install();
+                    WindowsIntegration.Start();
+                }).ConfigureAwait(true);
+                _serviceMode = true;
+                EnsurePoll();
+                Status = Loc.T("Protection is on (Windows service)", "Koruma açık (Windows servisi)");
+                StrategyLine = DisplayStrategy();
+                RaiseRunning();
+                AppendLog("Windows servisi başlatıldı — bilgisayar açılınca koruma otomatik gelir.");
+            }
+            else
+            {
+                _serviceMode = false;
+                await ApplyEngineAsync();
+            }
+            TrayService.ShowBalloon("MuckDPI", Loc.T(
+                "Protection started. Open sites can retry on their own — no browser restart needed.",
+                "Koruma başladı. Açık sekmeler kendiliğinden yenilenir, tarayıcıyı kapatmanıza gerek yok."));
         }
         catch (Exception ex)
         {
@@ -219,41 +162,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Busy = true;
         try
         {
-            await Task.Run(StopEngine);
-            Status = Loc.T("Protection is off", "Koruma kapalı");
-            OnChanged(nameof(IsRunning));
-            OnChanged(nameof(PowerLabel));
-            OnChanged(nameof(AccentStatus));
-            StartCommand.Raise();
-            StopCommand.Raise();
-        }
-        finally { Busy = false; }
-    }
-
-    public async Task DetectAsync()
-    {
-        Busy = true;
-        TuneProgress = Loc.T("Detecting ISP…", "ISS algılanıyor…");
-        try
-        {
-            var guess = await IspDetector.DetectAsync();
-            if (guess.ConfidenceHigh)
+            await Task.Run(() =>
             {
-                S.IspId = guess.Id;
-                S.LastIspName = guess.Name;
-                if (S.StrategyId is "auto" or "")
-                    S.StrategyId = "auto";
-            }
-            IspLine = $"{guess.Name}  ·  {guess.Asn}  ·  {guess.PublicIp}";
-            var profile = IspCatalog.Get(guess.ConfidenceHigh ? guess.Id : "universal");
-            TuneProgress = Loc.T(profile.NotesEn, profile.NotesTr);
-            StrategyLine = DisplayStrategy();
-            Persist();
-        }
-        catch (Exception ex)
-        {
-            Error = ex.Message;
-            TuneProgress = ex.Message;
+                WindowsIntegration.Stop();
+                StopEngine();
+            });
+            _serviceMode = false;
+            Status = Loc.T("Protection is off", "Koruma kapalı");
+            RaiseRunning();
         }
         finally { Busy = false; }
     }
@@ -261,124 +177,224 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task TuneAsync()
     {
         Busy = true;
+        Error = null;
         try
         {
-            if (!IsRunning) await StartAsync();
+            ApplyRuntimeDefaults();
+            TuneProgress = Loc.T("Detecting ISP…", "ISS algılanıyor…");
+            try
+            {
+                var guess = await IspDetector.DetectAsync().ConfigureAwait(true);
+                if (guess.ConfidenceHigh)
+                {
+                    S.IspId = guess.Id;
+                    S.LastIspName = guess.Name;
+                }
+                IspLine = $"{guess.Name}  ·  {guess.Asn}  ·  {guess.PublicIp}";
+                AppendLog($"ISS: {IspLine}");
+            }
+            catch (Exception ex)
+            {
+                AppendLog("ISS algılanamadı: " + ex.Message);
+            }
+
+            TuneProgress = Loc.T("Measuring line without protection…", "Koruma kapalıyken hat ölçülüyor…");
+            await Task.Run(() =>
+            {
+                WindowsIntegration.Stop();
+                StopEngine();
+            }).ConfigureAwait(true);
+            _serviceMode = false;
+            RaiseRunning();
+            await Task.Delay(400).ConfigureAwait(true);
+
+            var baseline = await AutoTuner.ProbeManyAsync(TurkeyBlockedSites.ProbeUrls, CancellationToken.None).ConfigureAwait(true);
+            var blocked = baseline.Where(o => !o.Ok).ToList();
+            var okCount = baseline.Count(o => o.Ok);
+            AppendLog($"Temel: {okCount}/{baseline.Count} site açıldı (koruma kapalı)");
+            foreach (var o in baseline)
+                AppendLog($"  {o.Url} → {(o.Ok ? "OK" : "FAIL")} {o.Detail}");
+
+            var probeUrls = AutoTuner.FocusUrls(baseline);
+            if (probeUrls.Count == 0)
+            {
+                TuneProgress = Loc.T(
+                    "No blocked sites on this sample. Applying Turkey profile.",
+                    "Bu örnekte yasaklı site görünmedi. Türkiye profili uygulanıyor.");
+                S.StrategyId = S.IspId == "turk-telekom" ? "mode9" : "turkey";
+                S.QuicMode = QuicMode.BlockAll;
+                Persist();
+                await ApplyEngineAsync().ConfigureAwait(true);
+                await PromoteToServiceAsync().ConfigureAwait(true);
+                return;
+            }
+
+            TuneProgress = Loc.T(
+                $"DPI likely on {blocked.Count} sites. Testing methods…",
+                $"{blocked.Count} sitede DPI izi var. Yöntemler deneniyor…");
+
             var tuner = new AutoTuner();
-            var progress = new Progress<string>(s => TuneProgress = Loc.T($"Testing {s}…", $"{s} deneniyor…"));
+            var progress = new Progress<string>(s =>
+                TuneProgress = Loc.T($"Testing {s}…", $"{s} deneniyor…"));
             var scores = await tuner.RunAsync(
-                StrategyCatalog.TuneOrder,
-                AutoTuner.DefaultUrls,
+                StrategyCatalog.TuneOrderFor(S.IspId),
+                probeUrls,
                 async (strategy, ct) =>
                 {
                     S.StrategyId = strategy.Id;
-                    await Task.Run(() =>
-                    {
-                        StopEngine();
-                    }, ct);
-                    var cfg = EngineConfig.From(S);
-                    _engine = new DpiEngine(cfg);
-                    WireEngine(_engine);
-                    await Task.Run(() => _engine.Start(), ct);
-                    OnChanged(nameof(IsRunning));
-                    OnChanged(nameof(PowerLabel));
-                    OnChanged(nameof(AccentStatus));
+                    S.QuicMode = QuicMode.BlockAll;
+                    await ApplyEngineAsync(ct).ConfigureAwait(true);
                 },
                 progress,
-                CancellationToken.None);
-
-            var best = scores.FirstOrDefault();
-            if (best is not null && best.Passed > 0)
-            {
-                S.StrategyId = best.Strategy.Id;
-                S.LastStrategyName = best.Strategy.Name;
-                S.LastTuneUtc = DateTimeOffset.UtcNow;
-                Persist();
-                await Task.Run(StopEngine);
-                var cfg = EngineConfig.From(S);
-                _engine = new DpiEngine(cfg);
-                WireEngine(_engine);
-                await Task.Run(() => _engine.Start());
-                Status = Loc.T("Protection is on", "Koruma açık");
-                StrategyLine = DisplayStrategy();
-                OnChanged(nameof(IsRunning));
-                OnChanged(nameof(PowerLabel));
-                OnChanged(nameof(AccentStatus));
-                TuneProgress = Loc.T(
-                    $"Best: {best.Strategy.Name} ({best.Passed}/{best.Passed + best.Failed} sites).",
-                    $"En iyisi: {best.Strategy.NameTr} ({best.Passed}/{best.Passed + best.Failed} site).");
-            }
-            else
-            {
-                TuneProgress = Loc.T(
-                    "No strategy fully passed. Try another DNS provider or check that the site is not IP-blocked.",
-                    "Hiçbir strateji tam geçmedi. Başka bir DNS deneyin veya sitenin IP seviyesinde engelli olup olmadığına bakın.");
-            }
+                CancellationToken.None).ConfigureAwait(true);
 
             foreach (var s in scores)
             {
-                AppendLog($"{s.Strategy.Id}: {s.Passed} ok / {s.Failed} fail");
+                AppendLog($"{s.Strategy.Id}: {s.Passed} ok / {s.Failed} fail  (ağırlık {s.Weight})");
                 foreach (var o in s.Outcomes)
                     AppendLog($"  {o.Url} → {(o.Ok ? "OK" : "FAIL")} {o.Detail} ({o.ElapsedMs}ms)");
             }
+
+            var ranked = scores.ToList();
+            var best = ranked.FirstOrDefault();
+            if (best is null || best.Passed == 0)
+            {
+                S.StrategyId = S.IspId == "turk-telekom" ? "mode9" : "turkey";
+                S.QuicMode = QuicMode.BlockAll;
+                Persist();
+                await ApplyEngineAsync().ConfigureAwait(true);
+                await PromoteToServiceAsync().ConfigureAwait(true);
+                TuneProgress = Loc.T(
+                    "Scan did not fully pass. Applied the TTNet/Turkey fallback.",
+                    "Tarama tam geçmedi. TTNet/Türkiye yedeği uygulandı.");
+                return;
+            }
+
+            best = PreferYoutubeIfNeeded(ranked, best);
+
+            S.StrategyId = best.Strategy.Id;
+            S.LastStrategyName = best.Strategy.Name;
+            S.LastTuneUtc = DateTimeOffset.UtcNow;
+            S.QuicMode = QuicMode.BlockAll;
+            Persist();
+            await ApplyEngineAsync().ConfigureAwait(true);
+            await PromoteToServiceAsync().ConfigureAwait(true);
+
+            TuneProgress = Loc.T(
+                $"Applied {best.Strategy.Name} ({best.Passed}/{best.Passed + best.Failed}, weight {best.Weight}). QUIC dropped — browser can stay open.",
+                $"Uygulandı: {best.Strategy.NameTr} ({best.Passed}/{best.Passed + best.Failed}, ağırlık {best.Weight}). HTTP/3 kapatıldı, tarayıcıyı kapatmanıza gerek yok.");
         }
         catch (Exception ex)
         {
             TuneProgress = ex.Message;
+            Error = ex.Message;
+            AppendLog(ex.Message);
         }
         finally { Busy = false; }
-    }
-
-    public async Task ProbeCustomAsync()
-    {
-        Busy = true;
-        try
-        {
-            var r = await AutoTuner.ProbeAsync(ProbeUrl, CancellationToken.None);
-            ProbeResult = $"{(r.Ok ? "OK" : "FAIL")}  {r.Detail}  ({r.ElapsedMs} ms)";
-        }
-        finally { Busy = false; }
-    }
-
-    public void ApplyTurkeyPreset()
-    {
-        S.StrategyId = "turkey";
-        S.FilterMode = FilterMode.Global;
-        S.DnsProvider = "yandex";
-        S.EnableDnsProtect = true;
-        S.QuicMode = QuicMode.Off;
-        OnChanged(nameof(SelectedStrategyId));
-        OnChanged(nameof(SelectedFilter));
-        OnChanged(nameof(SelectedDns));
-        OnChanged(nameof(SelectedQuic));
-        OnChanged(nameof(EnableDnsProtect));
-        Persist();
-        TuneProgress = Loc.T(
-            "Applied Turkey profile: -5 + TTL 5 + Yandex 77.88.8.8:1253, all HTTPS except banks.",
-            "Türkiye profili uygulandı: -5 + TTL 5 + Yandex 77.88.8.8:1253, banka hariç tüm HTTPS.");
     }
 
     public void Persist()
     {
-        PullUiIntoSettings();
         SettingsStore.Save();
         StrategyLine = DisplayStrategy();
     }
 
     public async Task OnCloseAsync()
     {
-        await StopAsync();
+        if (!S.WindowsIntegrate)
+            await StopAsync();
         Persist();
     }
 
-    private void PullUiIntoSettings()
+    private async Task PromoteToServiceAsync()
     {
-        S.EnabledServices = Services.Where(x => x.Enabled).Select(x => x.Id).ToList();
-        S.CustomHosts = CustomHostsText
-            .Split(['\r', '\n', ',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        SettingsStore.Current.Language = Loc.Language;
+        if (!S.WindowsIntegrate || !WindowsIntegration.ServiceExeExists)
+            return;
+        Persist();
+        await Task.Run(StopEngine).ConfigureAwait(true);
+        await Task.Run(() =>
+        {
+            WindowsIntegration.Install();
+            WindowsIntegration.Start();
+        }).ConfigureAwait(true);
+        _serviceMode = true;
+        EnsurePoll();
+        Status = Loc.T("Protection is on (Windows service)", "Koruma açık (Windows servisi)");
+        RaiseRunning();
+        AppendLog("Windows servisine alındı — pencereyi kapatsanız da koruma açık kalır.");
+    }
+
+    private void EnsurePoll()
+    {
+        if (_poll is not null) return;
+        _poll = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _poll.Tick += (_, _) => SyncFromService();
+        _poll.Start();
+    }
+
+    private void SyncFromService()
+    {
+        var dto = SettingsIo.ReadStatus();
+        var running = WindowsIntegration.IsServiceRunning && dto?.Running == true;
+        if (dto is not null)
+        {
+            var text = Loc.T(
+                $"seen {dto.PacketsSeen:N0} · desync {dto.PacketsDesynced:N0} · fake {dto.FakeSent:N0} · dns {dto.DnsRedirected:N0} · quic {dto.QuicBlocked:N0} · v6 {dto.Ipv6Dropped:N0}",
+                $"görülen {dto.PacketsSeen:N0} · desync {dto.PacketsDesynced:N0} · sahte {dto.FakeSent:N0} · dns {dto.DnsRedirected:N0} · quic {dto.QuicBlocked:N0} · v6 {dto.Ipv6Dropped:N0}");
+            StatsLine = text;
+            if (dto.RecentLog.Count > 0)
+            {
+                var joined = string.Join(Environment.NewLine, dto.RecentLog);
+                if (joined != _logText)
+                {
+                    _logText = joined;
+                    OnChanged(nameof(LogText));
+                }
+            }
+            if (running && !string.IsNullOrWhiteSpace(dto.Message))
+                Status = dto.Message + " (Windows servisi)";
+        }
+        OnChanged(nameof(IsRunning));
+        OnChanged(nameof(AccentStatus));
+        StartCommand.Raise();
+        StopCommand.Raise();
+    }
+
+    private static StrategyScore PreferYoutubeIfNeeded(List<StrategyScore> ranked, StrategyScore best)
+    {
+        if (!YoutubeStillDown(best)) return best;
+        var mode9 = ranked.FirstOrDefault(s => s.Strategy.Id == "mode9");
+        if (mode9 is null || YoutubeStillDown(mode9)) return best;
+        var discordHeld = !mode9.Outcomes.Any(o => ProbeWeights.IsDiscord(o.Url))
+            || mode9.Outcomes.Where(o => ProbeWeights.IsDiscord(o.Url)).Any(o => o.Ok);
+        return discordHeld ? mode9 : best;
+    }
+
+    private static bool YoutubeStillDown(StrategyScore score) =>
+        score.Outcomes.Any(o => ProbeWeights.IsYoutube(o.Url)) &&
+        score.Outcomes.Where(o => ProbeWeights.IsYoutube(o.Url)).All(o => !o.Ok);
+
+    private void ApplyRuntimeDefaults()
+    {
+        S.FilterMode = FilterMode.Global;
+        S.EnableDnsProtect = true;
+        S.EnablePassiveDrop = true;
+        S.QuicMode = QuicMode.BlockAll;
+        if (string.IsNullOrWhiteSpace(S.DnsProvider) || S.DnsProvider.Equals("off", StringComparison.OrdinalIgnoreCase))
+            S.DnsProvider = "yandex";
+    }
+
+    private async Task ApplyEngineAsync(CancellationToken ct = default)
+    {
+        await Task.Run(StopEngine, ct).ConfigureAwait(true);
+        var cfg = EngineConfig.From(S);
+        var engine = new DpiEngine(cfg);
+        WireEngine(engine);
+        _engine = engine;
+        await Task.Run(() => engine.Start(), ct).ConfigureAwait(true);
+        Status = Loc.T("Protection is on", "Koruma açık");
+        StrategyLine = DisplayStrategy();
+        RaiseRunning();
     }
 
     private void WireEngine(DpiEngine engine)
@@ -386,7 +402,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         engine.Log += (_, e) =>
         {
             var line = $"[{e.Timestamp:HH:mm:ss}] {e.Message}";
-            System.Windows.Application.Current?.Dispatcher.Invoke(() => AppendLog(line));
+            _ui.BeginInvoke(() => AppendLog(line));
         };
         engine.HostLearned += (_, host) =>
         {
@@ -400,44 +416,82 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             var st = engine.Stats;
             var text = Loc.T(
-                $"seen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · fake {st.FakeSent:N0} · dns-nat {st.DnsRedirected:N0} · doh {st.DnsRewritten:N0} · quic-drop {st.QuicBlocked:N0}",
-                $"görülen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · sahte {st.FakeSent:N0} · dns {st.DnsRedirected:N0} · doh {st.DnsRewritten:N0} · quic {st.QuicBlocked:N0}");
-            System.Windows.Application.Current?.Dispatcher.Invoke(() => StatsLine = text);
+                $"seen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · fake {st.FakeSent:N0} · dns {st.DnsRedirected:N0} · quic {st.QuicBlocked:N0} · v6 {st.Ipv6Dropped:N0}",
+                $"görülen {st.PacketsSeen:N0} · desync {st.PacketsDesynced:N0} · sahte {st.FakeSent:N0} · dns {st.DnsRedirected:N0} · quic {st.QuicBlocked:N0} · v6 {st.Ipv6Dropped:N0}");
+            _ui.BeginInvoke(() => StatsLine = text);
         };
     }
 
     private void StopEngine()
     {
-        _engine?.Stop();
-        _engine?.Dispose();
+        var engine = _engine;
         _engine = null;
+        engine?.Stop();
+        engine?.Dispose();
+    }
+
+    private void RaiseRunning()
+    {
+        OnUi(() =>
+        {
+            OnChanged(nameof(IsRunning));
+            OnChanged(nameof(AccentStatus));
+            StartCommand.Raise();
+            StopCommand.Raise();
+        });
     }
 
     private string DisplayStrategy()
     {
         var isp = S.IspId is "auto" or "" ? Loc.T("Auto ISP", "Otomatik ISS") : IspCatalog.Get(S.IspId).Name;
         var st = S.StrategyId is "auto" or ""
-            ? Loc.T("Auto strategy", "Otomatik strateji")
+            ? Loc.T("Turkey recommended", "Türkiye önerilen")
             : (Loc.Tr ? StrategyCatalog.Get(S.StrategyId).NameTr : StrategyCatalog.Get(S.StrategyId).Name);
-        return $"{isp} · {st}";
+        return $"{isp} · {st} · banka/devlet hariç tüm siteler";
     }
 
     private void AppendLog(string line)
     {
-        var next = string.IsNullOrEmpty(LogText) ? line : LogText + Environment.NewLine + line;
-        if (next.Length > 40_000) next = next[^30_000..];
-        LogText = next;
+        OnUi(() =>
+        {
+            var next = string.IsNullOrEmpty(_logText) ? line : _logText + Environment.NewLine + line;
+            if (next.Length > 40_000) next = next[^30_000..];
+            _logText = next;
+            OnChanged(nameof(LogText));
+        });
+    }
+
+    private void Set(ref string field, string value, [CallerMemberName] string? name = null)
+    {
+        var n = name;
+        if (_ui.CheckAccess())
+        {
+            field = value;
+            OnChanged(n);
+            return;
+        }
+        var v = value;
+        _ui.Invoke(() =>
+        {
+            switch (n)
+            {
+                case nameof(Status): _status = v; break;
+                case nameof(IspLine): _ispLine = v; break;
+                case nameof(StrategyLine): _strategyLine = v; break;
+                case nameof(LogText): _logText = v; break;
+                case nameof(StatsLine): _statsLine = v; break;
+                case nameof(TuneProgress): _tuneProgress = v; break;
+            }
+            OnChanged(n);
+        });
+    }
+
+    private void OnUi(Action action)
+    {
+        if (_ui.CheckAccess()) action();
+        else _ui.Invoke(action);
     }
 
     private void OnChanged([CallerMemberName] string? n = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
-}
-
-public sealed class ServiceToggle : INotifyPropertyChanged
-{
-    public required string Id { get; init; }
-    public required string Title { get; init; }
-    private bool _enabled;
-    public bool Enabled { get => _enabled; set { _enabled = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Enabled))); } }
-    public event PropertyChangedEventHandler? PropertyChanged;
 }

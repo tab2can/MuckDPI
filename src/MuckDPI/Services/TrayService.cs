@@ -1,5 +1,6 @@
 using System.Windows;
 using Forms = System.Windows.Forms;
+using MuckDPI.ViewModels;
 
 namespace MuckDPI.Services;
 
@@ -7,10 +8,13 @@ public static class TrayService
 {
     private static Forms.NotifyIcon? _icon;
     private static Window? _window;
+    private static MainViewModel? _vm;
+    public static bool ExitRequested { get; set; }
 
-    public static void Attach(Window window)
+    public static void Attach(Window window, MainViewModel vm)
     {
         _window = window;
+        _vm = vm;
         _icon = new Forms.NotifyIcon
         {
             Visible = true,
@@ -20,10 +24,20 @@ public static class TrayService
         _icon.DoubleClick += (_, _) => Show();
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add(Loc.T("Open", "Aç"), null, (_, _) => Show());
-        menu.Items.Add(Loc.T("Exit", "Çıkış"), null, (_, _) =>
+        menu.Items.Add(Loc.T("Start protection", "Korumayı başlat"), null, async (_, _) =>
         {
+            if (_vm is not null) await _vm.StartAsync();
+        });
+        menu.Items.Add(Loc.T("Stop protection", "Korumayı durdur"), null, async (_, _) =>
+        {
+            if (_vm is not null) await _vm.StopAsync();
+        });
+        menu.Items.Add(new Forms.ToolStripSeparator());
+        menu.Items.Add(Loc.T("Exit (keep protection)", "Çıkış (koruma açık kalsın)"), null, (_, _) =>
+        {
+            ExitRequested = true;
             _icon!.Visible = false;
-            System.Windows.Application.Current.Shutdown();
+            _window?.Close();
         });
         _icon.ContextMenuStrip = menu;
     }

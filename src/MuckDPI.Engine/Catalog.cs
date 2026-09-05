@@ -17,7 +17,10 @@ public static class StrategyCatalog
             SendFake = true,
             FakeTtl = 5,
             FakeObfuscateSni = true,
-            MaxPayload = 1200
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         },
         new Strategy
         {
@@ -31,7 +34,10 @@ public static class StrategyCatalog
             SendFake = true,
             FakeTtl = 3,
             ReverseFragments = false,
-            MaxPayload = 1200
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         },
         new Strategy
         {
@@ -46,7 +52,10 @@ public static class StrategyCatalog
             SendFake = true,
             AutoTtl = true,
             FakeTtl = 5,
-            MaxPayload = 1200
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         },
         new Strategy
         {
@@ -59,7 +68,10 @@ public static class StrategyCatalog
             SplitPos = 2,
             SendFake = true,
             FakeTtl = 3,
-            MaxPayload = 1200
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         },
         new Strategy
         {
@@ -76,7 +88,9 @@ public static class StrategyCatalog
             FakeWrongChecksum = true,
             FakeRepeats = 2,
             BlockQuic = true,
-            MaxPayload = 1200
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         },
         new Strategy
         {
@@ -166,7 +180,64 @@ public static class StrategyCatalog
             DescriptionTr = "Çok erken bölme. Birçok Superonline hattında işe yarar.",
             SplitAtSni = false,
             SplitPos = 1,
-            ReverseFragments = true
+            ReverseFragments = true,
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16
+        },
+        new Strategy
+        {
+            Id = "ttl1",
+            Name = "Fake TTL 1 + tiny split",
+            NameTr = "Sahte TTL 1 + küçük bölme",
+            Description = "Very low TTL decoy plus 1-byte split.",
+            DescriptionTr = "Çok düşük TTL sahte paket ve 1 bayt bölme.",
+            SplitAtSni = false,
+            SplitPos = 1,
+            ReverseFragments = true,
+            SendFake = true,
+            FakeTtl = 1,
+            FakeObfuscateSni = true,
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
+        },
+        new Strategy
+        {
+            Id = "fake-ttl7",
+            Name = "Fake TTL 7 + reverse",
+            NameTr = "Sahte TTL 7 + ters",
+            Description = "Decoy dies farther away. Some TTNet boxes sit behind extra hops.",
+            DescriptionTr = "Sahte paket daha uzakta düşer. Bazı TTNet kutuları ekstra hop arkasındadır.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            ReverseFragments = true,
+            SendFake = true,
+            FakeTtl = 7,
+            FakeObfuscateSni = true,
+            BlockQuic = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
+        },
+        new Strategy
+        {
+            Id = "multi-fake",
+            Name = "Multi fake TTL",
+            NameTr = "Çoklu sahte TTL",
+            Description = "Several decoy hellos before the real split.",
+            DescriptionTr = "Gerçek bölmeden önce birkaç sahte el sıkışma.",
+            SplitAtSni = false,
+            SplitPos = 2,
+            ReverseFragments = true,
+            SendFake = true,
+            FakeTtl = 5,
+            FakeRepeats = 4,
+            FakeObfuscateSni = true,
+            BlockQuic = true,
+            HttpObfuscate = true,
+            FirstPackets = 16,
+            MaxPayload = 1500
         }
     ];
 
@@ -174,7 +245,32 @@ public static class StrategyCatalog
         All.FirstOrDefault(s => s.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? All[0];
 
     public static IReadOnlyList<string> TuneOrder { get; } =
-        ["turkey", "so-ttl3", "so-mode5", "so-ttl3-dns", "mode9", "split-reverse", "fake-seq", "aggressive"];
+    [
+        "turkey", "so-ttl3-dns", "so-ttl3", "so-mode5", "mode9",
+        "tiny-frag", "ttl1", "fake-ttl", "fake-ttl7", "multi-fake",
+        "split-sni", "split-reverse", "fake-seq", "http-mix", "aggressive"
+    ];
+
+    public static IReadOnlyList<string> TuneOrderFor(string? ispId) =>
+        ispId switch
+        {
+            "superonline" =>
+            [
+                "so-ttl3-dns", "so-ttl3", "so-mode5", "turkey", "tiny-frag", "ttl1",
+                "mode9", "fake-ttl", "multi-fake", "fake-seq", "http-mix", "aggressive"
+            ],
+            "turk-telekom" =>
+            [
+                "turkey", "mode9", "fake-ttl7", "multi-fake", "so-ttl3-dns", "ttl1",
+                "tiny-frag", "fake-seq", "split-reverse", "fake-ttl", "http-mix", "aggressive"
+            ],
+            "vodafone" =>
+            [
+                "fake-seq", "turkey", "mode9", "split-reverse", "multi-fake", "so-ttl3-dns",
+                "ttl1", "fake-ttl", "http-mix", "aggressive"
+            ],
+            _ => TuneOrder
+        };
 }
 
 public static class IspCatalog
@@ -310,7 +406,7 @@ public static class ServiceCatalog
             Id = "discord",
             Name = "Discord",
             NameTr = "Discord",
-            BlockQuic = false,
+            BlockQuic = true,
             ProbeUrls = ["https://discord.com/api/v9/experiments", "https://cdn.discordapp.com/"],
             Hosts =
             [
@@ -385,6 +481,28 @@ public static class ServiceCatalog
         },
         new ServicePack
         {
+            Id = "roblox",
+            Name = "Roblox",
+            NameTr = "Roblox",
+            BlockQuic = true,
+            ProbeUrls = ["https://www.roblox.com/"],
+            Hosts =
+            [
+                "roblox.com", "rbxcdn.com", "rbx.com", "roblox.qq.com", "robloxlabs.com",
+                "roblox.cn", "copy.roblox.com"
+            ]
+        },
+        new ServicePack
+        {
+            Id = "wattpad",
+            Name = "Wattpad",
+            NameTr = "Wattpad",
+            BlockQuic = true,
+            ProbeUrls = ["https://www.wattpad.com/"],
+            Hosts = ["wattpad.com", "w.wattpad.com"]
+        },
+        new ServicePack
+        {
             Id = "twitch",
             Name = "Twitch",
             NameTr = "Twitch",
@@ -431,11 +549,22 @@ public static class ServiceCatalog
 
     public static readonly string[] ExcludeHosts =
     [
-        "turkiye.gov.tr", "e-devlet.gov.tr", "gib.gov.tr", "nvi.gov.tr", "sgk.gov.tr",
-        "vakifbank.com.tr", "isbank.com.tr", "garanti.com.tr", "akbank.com.tr", "ykb.com",
-        "ziraatbank.com.tr", "halkbank.com.tr", "enpara.com", "papara.com",
+        "turkiye.gov.tr", "gib.gov.tr", "nvi.gov.tr", "sgk.gov.tr",
+        "vakifbank.com.tr", "isbank.com.tr", "garanti.com.tr", "garantibbva.com.tr",
+        "akbank.com.tr", "ykb.com", "yapikredi.com.tr",
+        "ziraatbank.com.tr", "halkbank.com.tr", "enpara.com", "enpara.com.tr", "papara.com",
+        "qnb.com.tr", "qnbfinansbank.com.tr", "finansbank.com.tr",
+        "denizbank.com", "denizbank.com.tr", "fibabanka.com.tr", "ing.com.tr",
+        "kuveytturk.com.tr", "albaraka.com.tr", "albarakaturk.com.tr",
+        "teb.com.tr", "hsbc.com.tr", "odeabank.com.tr", "sekerbank.com.tr",
+        "anadolubank.com.tr", "icbc.com.tr", "burgan.com.tr",
         "microsoft.com", "windowsupdate.com", "update.microsoft.com", "login.microsoftonline.com",
         "apple.com", "icloud.com"
+    ];
+
+    public static readonly string[] ExcludeSuffixes =
+    [
+        ".gov.tr", ".bel.tr", ".pol.tr", ".tsk.tr", ".mil.tr"
     ];
 }
 
@@ -449,7 +578,7 @@ public sealed class HostMatcher
 
     public HostMatcher(AppSettings settings)
     {
-        _global = settings.FilterMode == FilterMode.Global;
+        _global = true;
         foreach (var ex in ServiceCatalog.ExcludeHosts)
             _exclude.Add(ex);
 
@@ -492,10 +621,20 @@ public sealed class HostMatcher
     public bool IsExcluded(string host)
     {
         if (_exclude.Contains(host)) return true;
+        foreach (var suf in ServiceCatalog.ExcludeSuffixes)
+        {
+            if (host.EndsWith(suf, StringComparison.OrdinalIgnoreCase) || host.Equals(suf.TrimStart('.'), StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
         foreach (var ex in _exclude)
         {
             if (host.EndsWith("." + ex, StringComparison.OrdinalIgnoreCase)) return true;
         }
+        if (host.Contains("e-devlet", StringComparison.OrdinalIgnoreCase)) return true;
+        if (host.EndsWith("bank.com.tr", StringComparison.OrdinalIgnoreCase) ||
+            host.EndsWith("bankasi.com.tr", StringComparison.OrdinalIgnoreCase) ||
+            host.EndsWith("bank.com", StringComparison.OrdinalIgnoreCase))
+            return true;
         return false;
     }
 
@@ -504,12 +643,14 @@ public sealed class HostMatcher
         if (settings.QuicMode == QuicMode.Off) return false;
         if (settings.QuicMode == QuicMode.BlockAll) return true;
         if (string.IsNullOrEmpty(host))
-            return settings.QuicMode == QuicMode.BlockAll || _global && settings.QuicMode == QuicMode.BlockHostlist;
+            return settings.QuicMode == QuicMode.BlockAll;
         if (!ShouldTouch(host)) return false;
         foreach (var pack in ServiceCatalog.All)
         {
             if (!pack.BlockQuic) continue;
-            if (!settings.EnabledServices.Contains(pack.Id, StringComparer.OrdinalIgnoreCase)) continue;
+            if (settings.FilterMode != FilterMode.Global &&
+                !settings.EnabledServices.Contains(pack.Id, StringComparer.OrdinalIgnoreCase))
+                continue;
             foreach (var h in pack.Hosts)
             {
                 if (host.Equals(h, StringComparison.OrdinalIgnoreCase) ||

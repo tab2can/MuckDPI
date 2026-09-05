@@ -10,13 +10,14 @@ internal sealed class ConnectionTable
 
     public ConnectionTable(int firstPackets) => _firstPackets = Math.Max(2, firstPackets);
 
-    public bool ShouldProcess(string key, int payloadLen)
+    public bool ShouldProcess(string key, int payloadLen, int? firstPackets = null)
     {
         if (payloadLen <= 0) return false;
         var conn = _map.GetOrAdd(key, _ => new Conn());
         var n = Interlocked.Increment(ref conn.DataPackets);
         conn.LastUtc = DateTime.UtcNow;
-        return n <= _firstPackets;
+        var limit = Math.Max(2, firstPackets ?? _firstPackets);
+        return n <= limit;
     }
 
     public void RememberHost(string key, string host) =>

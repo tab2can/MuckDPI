@@ -81,5 +81,47 @@ internal static class WindowsDns
     {
         try { DnsFlushResolverCache(); }
         catch { /* best-effort */ }
+        _ = Task.Run(NudgeBrowsers);
+    }
+
+    /// <summary>
+    /// Brief loopback address flap so Chrome/Edge treat it as a network change
+    /// and drop their DNS + HTTP/3 socket pools without a full restart.
+    /// </summary>
+    private static void NudgeBrowsers()
+    {
+        try
+        {
+            var idx = 1;
+            foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (nic.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    continue;
+                idx = nic.GetIPProperties().GetIPv4Properties()?.Index ?? 1;
+                break;
+            }
+            var dummy = "169.254.253.17";
+            RunNetsh($"interface ipv4 add address {idx} {dummy} 255.255.255.255");
+            Thread.Sleep(180);
+            RunNetsh($"interface ipv4 delete address {idx} {dummy}");
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
+
+    private static void RunNetsh(string args)
+    {
+        using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "netsh.exe",
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        });
+        p?.WaitForExit(4000);
     }
 }

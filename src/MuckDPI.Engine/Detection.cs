@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Http;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -96,6 +99,62 @@ public static class IspDetector
     private static HttpClient NewClient() => new() { Timeout = TimeSpan.FromSeconds(5) };
 }
 
+public static class TurkeyBlockedSites
+{
+    public static IReadOnlyList<string> ProbeUrls { get; } =
+    [
+        "https://www.ztod.com/",
+        "https://discord.com/",
+        "https://discord.com/api/v9/experiments",
+        "https://cdn.discordapp.com/",
+        "https://www.4shared.com/",
+        "https://www.anabolic.com/",
+        "https://www.brazzers.com/",
+        "https://onlyfans.com/",
+        "https://pastebin.com/",
+        "https://www.pornhub.com/",
+        "https://www.roblox.com/",
+        "http://shanesworld.com/",
+        "https://www.tango.me/",
+        "https://www.wattpad.com/",
+        "https://www.wattpad.com/home",
+        "https://www.wikileaks.org/",
+        "https://www.xvideos.com/",
+        "https://www.xnxx.com/",
+        "https://www.redtube.com/",
+        "https://www.youporn.com/",
+        "https://bangbros.com/",
+        "https://www.realitykings.com/",
+        "https://fansly.com/",
+        "https://www.voaturkce.com/",
+        "https://www.bet365.com/",
+        "https://www.bwin.com/",
+        "https://www.pinnacle.com/",
+        "https://betsson.com/",
+        "https://www.youtube.com/",
+        "https://i.ytimg.com/generate_204",
+        "https://www.dw.com/tr/",
+        "https://www.bbc.com/turkce"
+    ];
+
+    public static IReadOnlyList<string> YoutubeUrls { get; } =
+    [
+        "https://www.youtube.com/",
+        "https://m.youtube.com/",
+        "https://www.youtube.com/generate_204",
+        "https://i.ytimg.com/generate_204"
+    ];
+
+    public static IReadOnlyList<string> ContentUrls { get; } =
+    [
+        "https://discord.com/api/v9/experiments",
+        "https://cdn.discordapp.com/",
+        "https://www.wattpad.com/home",
+        "https://i.ytimg.com/generate_204",
+        "http://shanesworld.com/"
+    ];
+}
+
 public sealed class ProbeOutcome
 {
     public required string Url { get; init; }
@@ -109,20 +168,53 @@ public sealed class StrategyScore
     public required Strategy Strategy { get; init; }
     public int Passed { get; init; }
     public int Failed { get; init; }
+    public int Weight { get; init; }
     public List<ProbeOutcome> Outcomes { get; init; } = [];
     public double Ratio => Passed + Failed == 0 ? 0 : (double)Passed / (Passed + Failed);
 }
 
+public static class ProbeWeights
+{
+    public static int Of(string url)
+    {
+        var u = url.ToLowerInvariant();
+        if (u.Contains("discord")) return 3;
+        if (u.Contains("/api/") || u.Contains("generate_204") || u.Contains("/home")) return 3;
+        if (u.Contains("youtube") || u.Contains("ytimg") || u.Contains("roblox") || u.Contains("wattpad")) return 2;
+        if (u.Contains("pornhub") || u.Contains("xvideos") || u.Contains("onlyfans") || u.Contains("bet365")) return 2;
+        if (u.Contains("instagram") || u.Contains("dw.com") || u.Contains("bbc.")) return 2;
+        return 1;
+    }
+
+    public static bool IsYoutube(string url)
+    {
+        var u = url.ToLowerInvariant();
+        return u.Contains("youtube") || u.Contains("ytimg");
+    }
+
+    public static bool IsDiscord(string url) => url.Contains("discord", StringComparison.OrdinalIgnoreCase);
+
+    public static bool SameSite(string a, string b)
+    {
+        static string Host(string u)
+        {
+            try
+            {
+                var h = new Uri(u).Host.ToLowerInvariant();
+                return h.StartsWith("www.") ? h[4..] : h;
+            }
+            catch { return u; }
+        }
+        var ha = Host(a);
+        var hb = Host(b);
+        return ha.Contains(hb, StringComparison.OrdinalIgnoreCase)
+            || hb.Contains(ha, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
 public sealed class AutoTuner
 {
-    public static IReadOnlyList<string> DefaultUrls { get; } =
-    [
-        "https://www.youtube.com/",
-        "https://discord.com/api/v9/experiments",
-        "https://www.instagram.com/",
-        "https://x.com/",
-        "https://open.spotify.com/"
-    ];
+    public static IReadOnlyList<string> DefaultUrls => TurkeyBlockedSites.ProbeUrls;
 
     public async Task<IReadOnlyList<StrategyScore>> RunAsync(
         IEnumerable<string> strategyIds,
@@ -138,25 +230,80 @@ public sealed class AutoTuner
             var strategy = StrategyCatalog.Get(id);
             progress?.Report(strategy.NameTr);
             await applyAsync(strategy, ct).ConfigureAwait(false);
-            await Task.Delay(400, ct).ConfigureAwait(false);
-            var outcomes = new List<ProbeOutcome>();
-            foreach (var url in urls)
-            {
-                ct.ThrowIfCancellationRequested();
-                outcomes.Add(await ProbeAsync(url, ct).ConfigureAwait(false));
-            }
-            scores.Add(new StrategyScore
-            {
-                Strategy = strategy,
-                Passed = outcomes.Count(o => o.Ok),
-                Failed = outcomes.Count(o => !o.Ok),
-                Outcomes = outcomes
-            });
+            await Task.Delay(800, ct).ConfigureAwait(false);
+            var outcomes = await ProbeManyAsync(urls, ct).ConfigureAwait(false);
+            scores.Add(ScoreOf(strategy, outcomes));
         }
-        return scores.OrderByDescending(s => s.Ratio).ThenByDescending(s => s.Passed).ToList();
+        return Rank(scores);
+    }
+
+    public static List<string> FocusUrls(IReadOnlyList<ProbeOutcome> baseline)
+    {
+        var failed = baseline.Where(o => !o.Ok)
+            .OrderByDescending(o => ProbeWeights.Of(o.Url))
+            .Select(o => o.Url)
+            .Take(10)
+            .ToList();
+        if (failed.Count == 0) return [];
+        var set = new HashSet<string>(failed, StringComparer.OrdinalIgnoreCase);
+        if (failed.Any(ProbeWeights.IsYoutube))
+        {
+            foreach (var u in TurkeyBlockedSites.YoutubeUrls)
+                set.Add(u);
+        }
+        foreach (var u in TurkeyBlockedSites.ContentUrls)
+        {
+            if (failed.Any(f => ProbeWeights.SameSite(f, u)))
+                set.Add(u);
+        }
+        return set.Take(16).ToList();
+    }
+
+    public static StrategyScore ScoreOf(Strategy strategy, IReadOnlyList<ProbeOutcome> outcomes) =>
+        new()
+        {
+            Strategy = strategy,
+            Passed = outcomes.Count(o => o.Ok),
+            Failed = outcomes.Count(o => !o.Ok),
+            Weight = outcomes.Sum(o => o.Ok ? ProbeWeights.Of(o.Url) : 0),
+            Outcomes = outcomes.ToList()
+        };
+
+    public static List<StrategyScore> Rank(IEnumerable<StrategyScore> scores) =>
+        scores
+            .OrderByDescending(s => s.Weight)
+            .ThenByDescending(s => s.Ratio)
+            .ThenByDescending(s => s.Passed)
+            .ThenBy(s => Array.IndexOf(StrategyCatalog.TuneOrder.ToArray(), s.Strategy.Id))
+            .ToList();
+
+    public static async Task<IReadOnlyList<ProbeOutcome>> ProbeManyAsync(IReadOnlyList<string> urls, CancellationToken ct)
+    {
+        var results = new ProbeOutcome[urls.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, urls.Count), new ParallelOptions
+        {
+            MaxDegreeOfParallelism = 6,
+            CancellationToken = ct
+        }, async (i, token) =>
+        {
+            results[i] = await ProbeAsync(urls[i], token).ConfigureAwait(false);
+        }).ConfigureAwait(false);
+        return results;
     }
 
     public static async Task<ProbeOutcome> ProbeAsync(string url, CancellationToken ct)
+    {
+        var h1 = await ProbeOnceAsync(url, HttpVersion.Version11, HttpVersionPolicy.RequestVersionOrLower, ct)
+            .ConfigureAwait(false);
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || !h1.Ok)
+            return h1;
+        var h2 = await ProbeOnceAsync(url, HttpVersion.Version20, HttpVersionPolicy.RequestVersionOrLower, ct)
+            .ConfigureAwait(false);
+        return h2.Ok ? h1 : h2;
+    }
+
+    private static async Task<ProbeOutcome> ProbeOnceAsync(
+        string url, Version version, HttpVersionPolicy policy, CancellationToken ct)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -164,10 +311,34 @@ public sealed class AutoTuner
             using var http = new HttpClient(new SocketsHttpHandler
             {
                 AllowAutoRedirect = true,
-                ConnectTimeout = TimeSpan.FromSeconds(6)
+                ConnectTimeout = TimeSpan.FromSeconds(5),
+                PooledConnectionLifetime = TimeSpan.Zero,
+                AutomaticDecompression = DecompressionMethods.All,
+                EnableMultipleHttp2Connections = true,
+                ConnectCallback = async (context, token) =>
+                {
+                    var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+                    {
+                        NoDelay = true
+                    };
+                    try
+                    {
+                        await socket.ConnectAsync(context.DnsEndPoint, token).ConfigureAwait(false);
+                        return new NetworkStream(socket, ownsSocket: true);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                        throw;
+                    }
+                }
             })
-            { Timeout = TimeSpan.FromSeconds(8) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 MuckDPI/1.0");
+            {
+                Timeout = TimeSpan.FromSeconds(8),
+                DefaultRequestVersion = version,
+                DefaultVersionPolicy = policy
+            };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) MuckDPI/1.3");
             using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             sw.Stop();
             var ok = (int)resp.StatusCode is >= 200 and < 500;

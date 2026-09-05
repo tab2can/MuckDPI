@@ -12,11 +12,16 @@ public sealed class DpiEngine : IDisposable
     private readonly ConnectionTable _conns;
     private readonly HostMatcher _hosts;
     private readonly TtlTracker _ttl = new();
+    private readonly HostLearner _learner;
     private DohResolver? _doh;
     private DnsNat? _dnsNat;
     private nint _handle = 0;
     private Thread? _thread;
     private volatile bool _run;
+    private int _loggedQuic;
+    private int _loggedV6Dns;
+    private int _loggedV6Http;
+    private long _poolKillUntil;
     private readonly object _gate = new();
     private readonly object _sendLock = new();
 
@@ -31,6 +36,7 @@ public sealed class DpiEngine : IDisposable
         _config = config;
         _hosts = config.Hosts;
         _conns = new ConnectionTable(config.Strategy.FirstPackets);
+        _learner = new HostLearner(config.Settings.LearnedHardHosts);
     }
 
     public void Start()
@@ -61,16 +67,20 @@ public sealed class DpiEngine : IDisposable
             WinDivertNative.WinDivertSetParam(_handle, 2, 8 * 1024 * 1024);
             _run = true;
             _thread = new Thread(Loop) { IsBackground = true, Name = "MuckDPI.Engine", Priority = ThreadPriority.AboveNormal };
+            _poolKillUntil = Environment.TickCount64 + 12000;
             _thread.Start();
             WindowsDns.Flush();
-            Emit("info", $"Engine started ({_config.Strategy.Id})");
+            Emit("info", $"Engine started ({_config.Strategy.Id}), QUIC drop, Yandex :1253");
+            Emit("info", "Eski HTTP/3 oturumları düşürülüyor — tarayıcıyı kapatmanıza gerek yok.");
         }
     }
 
     public void Stop()
     {
+        bool wasRunning;
         lock (_gate)
         {
+            wasRunning = _run || (_handle != 0 && _handle != -1);
             _run = false;
             if (_handle != 0 && _handle != -1)
             {
@@ -80,10 +90,15 @@ public sealed class DpiEngine : IDisposable
             }
         }
         _thread?.Join(1500);
+        _thread = null;
         _doh?.Dispose();
         _doh = null;
         _dnsNat = null;
-        Emit("info", "Engine stopped");
+        if (wasRunning)
+        {
+            WindowsDns.Flush();
+            Emit("info", "Engine stopped");
+        }
     }
 
     public void Dispose() => Stop();
@@ -164,6 +179,8 @@ public sealed class DpiEngine : IDisposable
             {
                 Interlocked.Increment(ref Stats.PassiveDropped);
                 var host = _conns.HostOf(ConnectionTable.Key(pkt.DstIp, pkt.DstPort, pkt.SrcIp, pkt.SrcPort));
+                if (_learner.NoteRst(host))
+                    Emit("info", $"Öğrenildi {host} — bu siteye daha sert yöntem");
                 if (!string.IsNullOrEmpty(host) && !_hosts.ShouldTouch(host) && !_hosts.IsExcluded(host)
                     && _config.Settings.FilterMode == FilterMode.Smart)
                 {
@@ -177,8 +194,27 @@ public sealed class DpiEngine : IDisposable
             return;
         }
 
+        if (addr.Outbound && pkt.DstPort == 853)
+        {
+            Interlocked.Increment(ref Stats.DnsRedirected);
+            return;
+        }
+
+        if (addr.Outbound && pkt.IsTcp && pkt.DstPort == 53)
+        {
+            Interlocked.Increment(ref Stats.DnsRedirected);
+            return;
+        }
+
         if (addr.Outbound && pkt.IsUdp && pkt.DstPort == 53)
         {
+            if (pkt.IsIPv6)
+            {
+                if (Interlocked.Exchange(ref _loggedV6Dns, 1) == 0)
+                    Emit("info", "IPv6 DNS dropped — IPv4 + Yandex :1253 kullanılacak");
+                Interlocked.Increment(ref Stats.DnsRedirected);
+                return;
+            }
             if (_dnsNat is not null && _dnsNat.TryRewriteOutbound(buffer, length, pkt))
             {
                 SendRaw(buffer, length, ref addr);
@@ -194,17 +230,34 @@ public sealed class DpiEngine : IDisposable
             return;
         }
 
+        if (addr.Outbound && pkt.IsIPv6 && (pkt.DstPort == 443 || pkt.DstPort == 80))
+        {
+            if (Interlocked.Exchange(ref _loggedV6Http, 1) == 0)
+                Emit("info", "IPv6 HTTP(S) dropped — tarayıcı IPv4 kullanacak");
+            FailLocal(buffer, length, pkt, ref addr);
+            Interlocked.Increment(ref Stats.Ipv6Dropped);
+            return;
+        }
+
         if (addr.Outbound && pkt.IsUdp && pkt.DstPort == 443)
         {
             HandleQuic(buffer, length, pkt, ref addr);
             return;
         }
 
-        if (addr.Outbound && pkt.IsTcp && pkt.PayloadLength > 0 &&
-            (pkt.DstPort == 443 || pkt.DstPort == 80))
+        if (addr.Outbound && pkt.IsTcp && (pkt.DstPort == 443 || pkt.DstPort == 80))
         {
-            HandleTcp(buffer, length, pkt, ref addr);
-            return;
+            if (ShouldResetStalePool(pkt))
+            {
+                FailLocal(buffer, length, pkt, ref addr);
+                Interlocked.Increment(ref Stats.PassiveDropped);
+                return;
+            }
+            if (pkt.PayloadLength > 0)
+            {
+                HandleTcp(buffer, length, pkt, ref addr);
+                return;
+            }
         }
 
         SendRaw(buffer, length, ref addr);
@@ -222,6 +275,8 @@ public sealed class DpiEngine : IDisposable
         {
             host = sni;
             _conns.RememberHost(key, host);
+            if (_learner.NoteHello(host))
+                Emit("info", $"Öğrenildi {host} — tekrar denemeler algılandı");
         }
         else if (pkt.DstPort == 80 && HttpHost.TryGetHost(payload, out var hh, out _, out _))
         {
@@ -232,36 +287,37 @@ public sealed class DpiEngine : IDisposable
         else
             host = _conns.HostOf(key);
 
+        var st = _learner.For(host, _config.Strategy);
         var touch = _hosts.ShouldTouch(host);
         if (!touch)
         {
             SendRaw(buffer, length, ref addr);
             return;
         }
-        if (!_conns.ShouldProcess(key, pkt.PayloadLength))
+        if (!_conns.ShouldProcess(key, pkt.PayloadLength, st.FirstPackets))
         {
             SendRaw(buffer, length, ref addr);
             return;
         }
-        if (pkt.PayloadLength > _config.Strategy.MaxPayload)
+        var tlsHello = pkt.DstPort == 443 && payload.Length > 0 && payload[0] == 0x16;
+        if (!tlsHello && pkt.PayloadLength > st.MaxPayload)
         {
             SendRaw(buffer, length, ref addr);
             return;
         }
 
-        if (http && _config.Strategy.HttpObfuscate)
+        if (http && st.HttpObfuscate)
             HttpHost.Obfuscate(buffer.AsSpan(pkt.PayloadOffset, pkt.PayloadLength));
 
-        if (_config.Strategy.SendFake)
-            SendFakes(buffer, length, pkt, pkt.DstPort == 443 ? sniOff : 0, pkt.DstPort == 443 ? sniLen : 0, ref addr);
+        if (st.SendFake)
+            SendFakes(buffer, length, pkt, pkt.DstPort == 443 ? sniOff : 0, pkt.DstPort == 443 ? sniLen : 0, st, ref addr);
 
-        SendSplit(buffer, length, pkt, ref addr);
+        SendSplit(buffer, length, pkt, st, ref addr);
         Interlocked.Increment(ref Stats.PacketsDesynced);
     }
 
-    private void SendFakes(byte[] original, int length, ParsedPacket pkt, int sniOff, int sniLen, ref WinDivertNative.Address addr)
+    private void SendFakes(byte[] original, int length, ParsedPacket pkt, int sniOff, int sniLen, Strategy st, ref WinDivertNative.Address addr)
     {
-        var st = _config.Strategy;
         var repeats = Math.Clamp(st.FakeRepeats, 1, 6);
         for (var i = 0; i < repeats; i++)
         {
@@ -289,7 +345,7 @@ public sealed class DpiEngine : IDisposable
         }
     }
 
-    private void SendSplit(byte[] original, int length, ParsedPacket pkt, ref WinDivertNative.Address addr)
+    private void SendSplit(byte[] original, int length, ParsedPacket pkt, Strategy st, ref WinDivertNative.Address addr)
     {
         var payloadLen = pkt.PayloadLength;
         if (payloadLen < 3)
@@ -298,9 +354,9 @@ public sealed class DpiEngine : IDisposable
             return;
         }
 
-        var split = _config.Strategy.SplitAtSni
+        var split = st.SplitAtSni
             ? TlsSni.SniSplitOffset(pkt.Payload)
-            : _config.Strategy.SplitPos;
+            : st.SplitPos;
         split = Math.Clamp(split, 1, payloadLen - 1);
 
         var firstLen = pkt.PayloadOffset + split;
@@ -317,7 +373,7 @@ public sealed class DpiEngine : IDisposable
         PacketMutator.SetTcpSeq(second, pkt.IpHeaderLength, pkt.Seq + (uint)split);
         ResizeIp(second, secondLen, pkt.IsIPv6);
 
-        if (_config.Strategy.ReverseFragments)
+        if (st.ReverseFragments)
         {
             SendRaw(second, secondLen, ref addr);
             SendRaw(first, firstLen, ref addr);
@@ -344,11 +400,11 @@ public sealed class DpiEngine : IDisposable
             SendRaw(buffer, length, ref addr);
             return;
         }
+
         var host = _conns.HostOf(ConnectionTable.Key(pkt.SrcIp, pkt.SrcPort, pkt.DstIp, pkt.DstPort));
         var block = _config.Strategy.BlockQuic
-                    || _config.Settings.QuicMode == QuicMode.BlockAll
-                    || (host is not null && _hosts.ShouldBlockQuic(host, _config.Settings))
-                    || (_config.Settings.QuicMode == QuicMode.BlockHostlist && _hosts.ShouldBlockQuic(host, _config.Settings));
+                    || _config.Settings.QuicMode is QuicMode.BlockAll or QuicMode.BlockHostlist
+                    || (host is not null && _hosts.ShouldBlockQuic(host, _config.Settings));
 
         if (_config.Settings.QuicMode is QuicMode.FakeHostlist && host is not null && _hosts.ShouldTouch(host))
         {
@@ -363,6 +419,9 @@ public sealed class DpiEngine : IDisposable
 
         if (block)
         {
+            if (Interlocked.Exchange(ref _loggedQuic, 1) == 0)
+                Emit("info", "QUIC/HTTP3 dropped — tarayıcı TCP + desync kullanacak");
+            FailLocal(buffer, length, pkt, ref addr);
             Interlocked.Increment(ref Stats.QuicBlocked);
             return;
         }
@@ -449,6 +508,31 @@ public sealed class DpiEngine : IDisposable
         return host is not null && _hosts.ShouldTouch(host);
     }
 
+    private bool ShouldResetStalePool(in ParsedPacket pkt)
+    {
+        if (Environment.TickCount64 >= _poolKillUntil) return false;
+        if (pkt.TcpSyn || pkt.TcpRst) return false;
+        return PacketReply.IsPublicInternet(pkt.DstIp);
+    }
+
+    private void FailLocal(byte[] buffer, int length, in ParsedPacket pkt, ref WinDivertNative.Address addr)
+    {
+        try
+        {
+            var reply = pkt.IsTcp
+                ? PacketReply.InboundRst(buffer.AsSpan(0, length), pkt)
+                : PacketReply.IcmpUnreachable(buffer.AsSpan(0, length), pkt);
+            var inbound = addr;
+            inbound.Outbound = false;
+            inbound.Impostor = true;
+            SendRaw(reply, reply.Length, ref inbound);
+        }
+        catch
+        {
+            // drop original anyway
+        }
+    }
+
     private void ReinjectionSafe(byte[] buffer, int length, ref WinDivertNative.Address addr)
     {
         try { SendRaw(buffer, length, ref addr); } catch { /* drop rather than stall the stack */ }
@@ -479,8 +563,11 @@ public sealed class DpiEngine : IDisposable
         return
             "(outbound and tcp.DstPort == 443) or " +
             "(outbound and tcp.DstPort == 80) or " +
+            "(outbound and tcp.DstPort == 53) or " +
+            "(outbound and tcp.DstPort == 853) or " +
             "(outbound and udp.DstPort == 53) or " +
             "(outbound and udp.DstPort == 443) or " +
+            "(outbound and udp.DstPort == 853) or " +
             "(inbound and tcp and tcp.Rst)" + extra;
     }
 
@@ -508,6 +595,13 @@ public sealed class EngineConfig
 
     public static EngineConfig From(AppSettings settings)
     {
+        settings.FilterMode = FilterMode.Global;
+        settings.EnableDnsProtect = true;
+        settings.EnablePassiveDrop = true;
+        settings.QuicMode = QuicMode.BlockAll;
+        if (string.IsNullOrWhiteSpace(settings.DnsProvider) || settings.DnsProvider.Equals("off", StringComparison.OrdinalIgnoreCase))
+            settings.DnsProvider = "yandex";
+
         var isp = settings.IspId is "auto" or "" ? IspCatalog.Get("universal") : IspCatalog.Get(settings.IspId);
         var strategyId = settings.StrategyId is "auto" or "" ? isp.DefaultStrategyId : settings.StrategyId;
         var dns = ParseDns(settings);

@@ -15,21 +15,13 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm;
-        TrayService.Attach(this);
+        TrayService.Attach(this, _vm);
         Loaded += async (_, _) =>
         {
-            if (_vm.S.AutoStartEngine)
+            if (_vm.S.AutoStartEngine && !_vm.IsRunning)
                 await _vm.StartAsync();
         };
     }
-
-    private void NavHome(object sender, RoutedEventArgs e) => _vm.Page = "home";
-    private void NavWizard(object sender, RoutedEventArgs e) => _vm.Page = "wizard";
-    private void NavServices(object sender, RoutedEventArgs e) => _vm.Page = "services";
-    private void NavDns(object sender, RoutedEventArgs e) => _vm.Page = "dns";
-    private void NavProbe(object sender, RoutedEventArgs e) => _vm.Page = "probe";
-    private void NavLog(object sender, RoutedEventArgs e) => _vm.Page = "log";
-    private void NavSettings(object sender, RoutedEventArgs e) => _vm.Page = "settings";
 
     private void DragWindow(object sender, MouseButtonEventArgs e)
     {
@@ -51,12 +43,13 @@ public partial class MainWindow : Window
 
     private async void OnClosing(object sender, CancelEventArgs e)
     {
-        if (!_forceClose && _vm.MinimizeToTray)
+        if (!_forceClose && !TrayService.ExitRequested && _vm.MinimizeToTray)
         {
             e.Cancel = true;
             Hide();
             return;
         }
+        _forceClose = true;
         await _vm.OnCloseAsync();
         TrayService.Dispose();
         System.Windows.Application.Current.Shutdown();

@@ -30,7 +30,7 @@ public enum DnsProviderKind
 
 public sealed class AppSettings
 {
-    public int SettingsVersion { get; set; } = 2;
+    public int SettingsVersion { get; set; } = 5;
     public string Language { get; set; } = "tr";
     public string StrategyId { get; set; } = "turkey";
     public string IspId { get; set; } = "auto";
@@ -38,14 +38,17 @@ public sealed class AppSettings
     public bool EnableDnsProtect { get; set; } = true;
     public bool EnablePassiveDrop { get; set; } = true;
     public FilterMode FilterMode { get; set; } = FilterMode.Global;
-    public QuicMode QuicMode { get; set; } = QuicMode.Off;
+    public QuicMode QuicMode { get; set; } = QuicMode.BlockAll;
     public List<string> EnabledServices { get; set; } = new(ServiceCatalog.DefaultEnabled);
     public List<string> CustomHosts { get; set; } = [];
     public List<string> AutoHosts { get; set; } = [];
+    public List<string> LearnedHardHosts { get; set; } = [];
     public bool StartMinimized { get; set; }
     public bool MinimizeToTray { get; set; } = true;
-    public bool AutoStartEngine { get; set; }
+    public bool AutoStartEngine { get; set; } = true;
+    public bool WindowsIntegrate { get; set; } = true;
     public bool AutoTuneOnStart { get; set; }
+    public bool TuneCompleted { get; set; }
     public string? LastIspName { get; set; }
     public string? LastStrategyName { get; set; }
     public DateTimeOffset? LastTuneUtc { get; set; }
@@ -105,7 +108,23 @@ public sealed class EngineStats
     public long DnsRedirected;
     public long PassiveDropped;
     public long QuicBlocked;
+    public long Ipv6Dropped;
     public long AutoLearned;
+}
+
+public sealed class EngineStatusDto
+{
+    public bool Running { get; set; }
+    public string StrategyId { get; set; } = "";
+    public string Message { get; set; } = "";
+    public long PacketsSeen { get; set; }
+    public long PacketsDesynced { get; set; }
+    public long FakeSent { get; set; }
+    public long DnsRedirected { get; set; }
+    public long QuicBlocked { get; set; }
+    public long Ipv6Dropped { get; set; }
+    public List<string> RecentLog { get; set; } = [];
+    public DateTimeOffset Utc { get; set; }
 }
 
 public sealed class LogEventArgs : EventArgs
