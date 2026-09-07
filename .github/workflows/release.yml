@@ -1,0 +1,90 @@
+# Muck Store installs only Release assets that this workflow built and attested.
+# After the first tag, copy the SHA-256 from the "SHA-256" step into
+# muck.json install.assets[].sha256 and push to the default branch.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
+
+env:
+  WINDIVERT_URL: https://reqrypt.org/download/WinDivert-2.2.0-D.zip
+  WINDIVERT_NAME: WinDivert-2.2.0-D.zip
+  WINDIVERT_BASENAME: WinDivert-2.2.0-D
+  WINDIVERT_SHA256: 1d461cfdfa7ba88ebcfbb3603b71b703e9f72aba8aeff99a75ce293e6f89d2ba
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reproducible clock
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Install MinGW-w64
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-mingw-w64 zip
+
+      - name: Cache WinDivert
+        id: windivert-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.WINDIVERT_NAME }}
+          key: ${{ env.WINDIVERT_SHA256 }}
+
+      - name: Download WinDivert
+        if: steps.windivert-cache.outputs.cache-hit != 'true'
+        run: |
+          wget -q "${{ env.WINDIVERT_URL }}" -O "${{ env.WINDIVERT_NAME }}"
+          echo "${{ env.WINDIVERT_SHA256 }}  ${{ env.WINDIVERT_NAME }}" | sha256sum -c
+
+      - name: Unpack WinDivert
+        run: unzip -q "${{ env.WINDIVERT_NAME }}"
+
+      - name: Compile x86_64
+        run: |
+          make -C src clean
+          make -C src -j4 \
+            CPREFIX=x86_64-w64-mingw32- \
+            BIT64=1 \
+            WINDIVERTHEADERS="$(pwd)/${{ env.WINDIVERT_BASENAME }}/include" \
+            WINDIVERTLIBS="$(pwd)/${{ env.WINDIVERT_BASENAME }}/x64"
+
+      - name: Pack muckdpi.zip
+        run: |
+          mkdir -p dist/payload
+          cp src/muckdpi.exe dist/payload/
+          cp "${{ env.WINDIVERT_BASENAME }}/x64/WinDivert.dll" dist/payload/
+          cp "${{ env.WINDIVERT_BASENAME }}/x64/WinDivert64.sys" dist/payload/
+          cp LICENSE NOTICE dist/payload/
+          find dist/payload -exec touch -d "@${SOURCE_DATE_EPOCH}" {} +
+          (cd dist/payload && TZ=UTC zip -X -9 ../muckdpi.zip \
+            muckdpi.exe WinDivert.dll WinDivert64.sys LICENSE NOTICE)
+
+      - name: SHA-256 (paste into muck.json)
+        run: sha256sum dist/muckdpi.zip
+
+      - name: Attest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/muckdpi.zip
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/muckdpi.zip \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

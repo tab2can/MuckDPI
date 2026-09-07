@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WINDIVERT_URL: https://reqrypt.org/download/WinDivert-2.2.0-D.zip
+  WINDIVERT_NAME: WinDivert-2.2.0-D.zip
+  WINDIVERT_BASENAME: WinDivert-2.2.0-D
+  WINDIVERT_SHA256: 1d461cfdfa7ba88ebcfbb3603b71b703e9f72aba8aeff99a75ce293e6f89d2ba
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install MinGW-w64
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-mingw-w64
+
+      - name: Cache WinDivert
+        id: windivert-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.WINDIVERT_NAME }}
+          key: ${{ env.WINDIVERT_SHA256 }}
+
+      - name: Download WinDivert
+        if: steps.windivert-cache.outputs.cache-hit != 'true'
+        run: |
+          wget -q "${{ env.WINDIVERT_URL }}" -O "${{ env.WINDIVERT_NAME }}"
+          echo "${{ env.WINDIVERT_SHA256 }}  ${{ env.WINDIVERT_NAME }}" | sha256sum -c
+
+      - name: Unpack WinDivert
+        run: unzip -q "${{ env.WINDIVERT_NAME }}"
+
+      - name: Compile x86_64
+        run: |
+          make -C src -j4 \
+            CPREFIX=x86_64-w64-mingw32- \
+            BIT64=1 \
+            WINDIVERTHEADERS="$(pwd)/${{ env.WINDIVERT_BASENAME }}/include" \
+            WINDIVERTLIBS="$(pwd)/${{ env.WINDIVERT_BASENAME }}/x64"

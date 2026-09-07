@@ -1,0 +1,9 @@
+name: Feature request
+description: Suggest a modeset, setting, or Muck Store integration improvement
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What should change
+    validations:
+      required: true

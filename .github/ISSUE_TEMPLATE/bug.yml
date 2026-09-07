@@ -1,0 +1,32 @@
+name: Bug report
+description: Program crash, hang, or incorrect packet handling
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for **software bugs** (crash, hang, wrong packets, driver load failure).
+
+        A website that is still blocked is usually an ISP DPI change, not a code defect. Try another modeset in Muck Store → Program Settings → Launch arguments first (`-5` … `-9`).
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: args
+    attributes:
+      label: Launch arguments
+      description: What you typed in Muck Store Program Settings. Leave empty if you used the built-in default (mode -9).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: `%LOCALAPPDATA%\MuckStore\logs\com.tab2can.muckdpi.log`

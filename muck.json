@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tab2can/MuckStore/main/schema/muck.schema.json",
+  "id": "com.tab2can.muckdpi",
+  "name": "MuckDPI",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "summary": "Windows DPI circumvention utility. Start it from Muck Store; set launch arguments in Program Settings.",
+  "description": "MuckDPI intercepts outbound HTTP/HTTPS packets with WinDivert and applies fragmentation and fake-request tricks so ISP Deep Packet Inspection is less able to classify and block destinations. It requires administrator rights. Configure modesets and DNS redirect from Muck Store launch arguments — there are no .cmd scripts.",
+  "categories": ["network", "privacy"],
+  "tags": ["dpi", "windows", "windivert"],
+  "source": { "github": "tab2can/MuckDPI" },
+  "entry": "muckdpi.exe",
+  "install": {
+    "kind": "archive",
+    "assets": [
+      {
+        "file": "muckdpi.zip",
+        "platform": "windows-x64",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ],
+    "shortcuts": { "startMenu": true, "desktop": false }
+  },
+  "build": {
+    "workflow": ".github/workflows/release.yml",
+    "reproducible": true,
+    "attestations": "required"
+  },
+  "permissions": ["admin", "network", "autostart", "filesystem"],
+  "filesystemPaths": ["%MUCK_PROGRAM_DIR%\\*.txt"],
+  "update": { "channel": "github-releases", "includePrerelease": false },
+  "watchdog": { "onCrash": "restart", "maxRestarts": 3 },
+  "i18n": {
+    "tr": {
+      "name": "MuckDPI",
+      "summary": "Windows için DPI aşma aracı. Muck Store’dan başlatın; argümanları Program Ayarları’ndan girin.",
+      "description": "MuckDPI, WinDivert ile HTTP/HTTPS paketlerini yakalar ve parçalama / sahte istek yöntemleriyle ISS derin paket incelemesini zorlaştırır. Yönetici izni ister. Mod ve DNS yönlendirmesi Muck Store başlatma argümanlarından ayarlanır; .cmd dosyası yoktur."
+    }
+  },
+  "ui": {
+    "icon": "docs/icon.png",
+    "accent": "#dcb06a"
+  }
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Muck Store developer guide
+    url: https://github.com/tab2can/MuckStore/blob/main/docs/developer-guide.md
+    about: How programs are installed, started, and given launch arguments
+  - name: Upstream GoodbyeDPI
+    url: https://github.com/ValdikSS/GoodbyeDPI
+    about: Original project this fork is based on

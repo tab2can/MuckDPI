@@ -1,0 +1,17 @@
+MuckDPI
+Copyright 2026 tab2can
+
+This product is a rebranded and Muck Store–packaged distribution of GoodbyeDPI
+by ValdikSS, originally published at:
+
+    https://github.com/ValdikSS/GoodbyeDPI
+
+GoodbyeDPI is licensed under the Apache License, Version 2.0.
+
+MuckDPI also bundles WinDivert (https://github.com/basil00/Divert) as a
+runtime dependency of the release zip. See WinDivert’s own license in its
+upstream distribution.
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
