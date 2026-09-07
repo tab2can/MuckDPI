@@ -25,7 +25,7 @@
 // My mingw installation does not load inet_pton definition for some reason
 WINSOCK_API_LINKAGE INT WSAAPI inet_pton(INT Family, LPCSTR pStringBuf, PVOID pAddr);
 
-#define MUCKDPI_VERSION "v1.0.1"
+#define MUCKDPI_VERSION "v1.0.2"
 
 #define die() do { sleep(20); exit(EXIT_FAILURE); } while (0)
 
@@ -674,6 +674,14 @@ int main(int argc, char *argv[]) {
         hide_console();
     }
 
+    {
+        HANDLE already = CreateMutexA(NULL, TRUE, "Global\\MuckDPISingleInstance");
+        if (already && GetLastError() == ERROR_ALREADY_EXISTS) {
+            puts("MuckDPI is already running.");
+            return 0;
+        }
+    }
+
     if (filter_string == NULL)
         filter_string = strdup(FILTER_STRING_TEMPLATE);
     if (filter_passive_string == NULL)
@@ -1081,6 +1089,9 @@ int main(int argc, char *argv[]) {
                 exit(ERROR_DEFAULT);
         }
     }
+
+    if (!running_from_service && !debug_exit)
+        service_install_autostart(argc, argv);
 
     if (!http_fragment_size)
         http_fragment_size = 2;

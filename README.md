@@ -24,7 +24,8 @@ Kaynak, [ValdikSS / GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) (Apache-
 3. Doğrulama raporunu okuyun. `admin`, `network`, `autostart` ve `filesystem` izinleri listelenir.
 4. Güven diyaloğunu onaylayın. Kurulum `%LOCALAPPDATA%\MuckStore\programs\com.tab2can.muckdpi\{sürüm}\` altına iner.
 5. Kütüphane → **Başlat**. UAC sorulur (mağazada “yöneticiyi hatırla” açıksa sonraki açılışlarda atlanır). Konsol penceresi açılmaz.
-6. Windows ile birlikte açılsın istiyorsanız Program Ayarları → **Start with Windows**.
+6. İlk başarılı başlatma, `MuckDPI` Windows servisini `start=auto` ile kurar (eski `sc create` ile aynı). Bundan sonra Windows açılışında kendiliğinden gelir. Muck Store’daki **Start with Windows** anahtarı yönetici programlarda çalışmaz; onu kapatın.
+7. Launch arguments içine `start= "auto"` **yazmayın** — o `sc create` sözdizimidir, MuckDPI bayrağı değildir.
 
 Sideload ile denerken: Ayarlar → Geliştirici → klasörü yükle. Sideload, GitHub attestation’ını atlar.
 
@@ -43,6 +44,7 @@ Kütüphane → ⋯ → Ayarlar → Launch arguments.
 | Amaç | Yapıştırılacak metin |
 | --- | --- |
 | Varsayılan (Türkiye DNS + TTL 5) | *(boş)* |
+| Sık kullanılan (frag + QUIC + DNS) | `-e 1 -q --reverse-frag --wrong-chksum --frag-by-sni --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253` |
 | Modern, QUIC kapalı | `-9` |
 | DNS yönlendirme ile -9 | `-9 --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253` |
 | Yalnız -5 (otomatik TTL) | `-5` |
