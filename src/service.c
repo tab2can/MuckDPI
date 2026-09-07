@@ -5,6 +5,13 @@
 #include "muckdpi.h"
 #include "service.h"
 
+#ifndef SERVICE_CONFIG_DELAYED_AUTO_START_INFO
+#define SERVICE_CONFIG_DELAYED_AUTO_START_INFO 3
+typedef struct _SERVICE_DELAYED_AUTO_START_INFO {
+    BOOL fDelayedAutostart;
+} SERVICE_DELAYED_AUTO_START_INFO, *LPSERVICE_DELAYED_AUTO_START_INFO;
+#endif
+
 #define SERVICE_NAME "MuckDPI"
 
 static SERVICE_STATUS ServiceStatus;
@@ -79,11 +86,18 @@ void service_main(int argc __attribute__((unused)),
     return;
 }
 
+enum start_kind {
+    START_AUTOMATIC = 0,
+    START_AUTOMATIC_DELAYED,
+    START_MANUAL,
+    START_DISABLED
+};
+
 static int is_sc_noise(const char *a)
 {
     if (!a || !*a)
         return 1;
-    if (a[0] == '-' )
+    if (a[0] == '-')
         return 0;
     /* Leftover `sc create ... start= auto` tokens from launch arguments. */
     if (!_stricmp(a, "auto") || !_stricmp(a, "start") || !_strnicmp(a, "start=", 6))
@@ -94,7 +108,7 @@ static int is_sc_noise(const char *a)
 static int append_quoted(char *out, size_t *used, size_t cap, const char *s)
 {
     size_t i = *used;
-    size_t need = 3; /* quotes + space */
+    size_t need = 3;
     const char *p;
     for (p = s; *p; p++)
         need += (*p == '"') ? 2 : 1;
@@ -114,30 +128,199 @@ static int append_quoted(char *out, size_t *used, size_t cap, const char *s)
     return 1;
 }
 
+static int append_raw(char *out, size_t *used, size_t cap, const char *s)
+{
+    size_t n = strlen(s);
+    if (*used + 1 + n >= cap)
+        return 0;
+    if (*used)
+        out[(*used)++] = ' ';
+    memcpy(out + *used, s, n + 1);
+    *used += n;
+    return 1;
+}
+
+static char *read_file(const char *path)
+{
+    FILE *f;
+    long sz;
+    char *buf;
+    f = fopen(path, "rb");
+    if (!f)
+        return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    sz = ftell(f);
+    if (sz < 0 || sz > 2 * 1024 * 1024) {
+        fclose(f);
+        return NULL;
+    }
+    rewind(f);
+    buf = calloc((size_t)sz + 1, 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    if (fread(buf, 1, (size_t)sz, f) != (size_t)sz) {
+        free(buf);
+        fclose(f);
+        return NULL;
+    }
+    fclose(f);
+    return buf;
+}
+
+static int json_string_after(const char *json, const char *anchor, const char *key, char *out, size_t cap)
+{
+    const char *from = json;
+    const char *p;
+    char pat[160];
+    size_t n = 0;
+
+    if (anchor && *anchor) {
+        from = strstr(json, anchor);
+        if (!from)
+            return 0;
+    }
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    p = strstr(from, pat);
+    if (!p)
+        return 0;
+    p = strchr(p + strlen(pat), ':');
+    if (!p)
+        return 0;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
+        p++;
+    if (*p != '"')
+        return 0;
+    p++;
+    while (*p && *p != '"' && n + 1 < cap) {
+        if (*p == '\\' && p[1]) {
+            p++;
+            out[n++] = *p++;
+            continue;
+        }
+        out[n++] = *p++;
+    }
+    out[n] = '\0';
+    return 1;
+}
+
+static enum start_kind read_start_kind(void)
+{
+    char path[MAX_PATH];
+    char value[64];
+    char *json = NULL;
+    const char *env = getenv("MUCK_SETTINGS_PATH");
+    const char *appdata;
+
+    memset(value, 0, sizeof(value));
+    if (env && env[0])
+        json = read_file(env);
+    if (!json) {
+        appdata = getenv("APPDATA");
+        if (appdata) {
+            snprintf(path, sizeof(path),
+                     "%s\\MuckStore\\config\\com.tab2can.muckdpi.json", appdata);
+            json = read_file(path);
+        }
+    }
+    if (json) {
+        json_string_after(json, NULL, "startType", value, sizeof(value));
+        free(json);
+    }
+    if (!_stricmp(value, "automaticDelayed") || !_stricmp(value, "automatic-delayed"))
+        return START_AUTOMATIC_DELAYED;
+    if (!_stricmp(value, "manual"))
+        return START_MANUAL;
+    if (!_stricmp(value, "disabled"))
+        return START_DISABLED;
+    return START_AUTOMATIC;
+}
+
+static int store_launch_args(char *out, size_t cap)
+{
+    char path[MAX_PATH];
+    char *json;
+    const char *appdata = getenv("APPDATA");
+    const char *id = getenv("MUCK_PROGRAM_ID");
+    char anchor[128];
+
+    if (!appdata)
+        return 0;
+    if (!id || !id[0])
+        id = "com.tab2can.muckdpi";
+    snprintf(path, sizeof(path), "%s\\MuckStore\\installed.json", appdata);
+    json = read_file(path);
+    if (!json)
+        return 0;
+    snprintf(anchor, sizeof(anchor), "\"%s\"", id);
+    if (!json_string_after(json, anchor, "launchArgs", out, cap)) {
+        free(json);
+        return 0;
+    }
+    free(json);
+    return out[0] != '\0';
+}
+
+static const char *start_kind_name(enum start_kind kind)
+{
+    switch (kind) {
+        case START_AUTOMATIC_DELAYED: return "automatic (delayed)";
+        case START_MANUAL: return "manual";
+        case START_DISABLED: return "disabled";
+        default: return "automatic";
+    }
+}
+
 void service_install_autostart(int argc, char *argv[])
 {
     char exe[MAX_PATH];
     char binpath[32768];
+    char launch[8192];
     size_t used = 0;
-    int i;
+    int i, have_cli = 0;
+    enum start_kind kind;
+    DWORD win_start;
     SC_HANDLE scm, svc;
     SERVICE_DESCRIPTIONA desc;
+    SERVICE_DELAYED_AUTO_START_INFO delayed;
     DWORD err;
+    BOOL delayed_flag;
+
+    kind = read_start_kind();
+    win_start = SERVICE_AUTO_START;
+    if (kind == START_MANUAL)
+        win_start = SERVICE_DEMAND_START;
+    else if (kind == START_DISABLED)
+        win_start = SERVICE_DISABLED;
 
     if (GetModuleFileNameA(NULL, exe, MAX_PATH) == 0)
         return;
     if (!append_quoted(binpath, &used, sizeof(binpath), exe))
         return;
-    for (i = 1; i < argc; i++) {
-        if (is_sc_noise(argv[i]))
-            continue;
-        if (!append_quoted(binpath, &used, sizeof(binpath), argv[i]))
+
+    memset(launch, 0, sizeof(launch));
+    if (store_launch_args(launch, sizeof(launch))) {
+        if (!append_raw(binpath, &used, sizeof(binpath), launch))
             return;
+    } else {
+        for (i = 1; i < argc; i++) {
+            if (is_sc_noise(argv[i]))
+                continue;
+            have_cli = 1;
+            if (!append_quoted(binpath, &used, sizeof(binpath), argv[i]))
+                return;
+        }
+        (void)have_cli;
     }
 
     scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE);
     if (!scm) {
-        puts("Could not open the service manager (need administrator) — Windows start=auto was not set.");
+        puts("Could not open the service manager (need administrator).");
         return;
     }
 
@@ -145,7 +328,7 @@ void service_install_autostart(int argc, char *argv[])
         scm, SERVICE_NAME, SERVICE_NAME,
         SERVICE_ALL_ACCESS,
         SERVICE_WIN32_OWN_PROCESS,
-        SERVICE_AUTO_START,
+        win_start,
         SERVICE_ERROR_NORMAL,
         binpath, NULL, NULL, NULL, NULL, NULL);
     if (!svc) {
@@ -162,7 +345,7 @@ void service_install_autostart(int argc, char *argv[])
             return;
         }
         if (!ChangeServiceConfigA(
-                svc, SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
+                svc, SERVICE_WIN32_OWN_PROCESS, win_start,
                 SERVICE_ERROR_NORMAL, binpath, NULL, NULL, NULL, NULL, NULL, NULL)) {
             printf("Could not update the MuckDPI service (error %lu).\n", GetLastError());
             CloseServiceHandle(svc);
@@ -171,11 +354,42 @@ void service_install_autostart(int argc, char *argv[])
         }
     }
 
-    desc.lpDescription = "MuckDPI — DPI circumvention. Starts automatically with Windows.";
+    delayed.fDelayedAutostart = (kind == START_AUTOMATIC_DELAYED);
+    delayed_flag = ChangeServiceConfig2A(svc, SERVICE_CONFIG_DELAYED_AUTO_START_INFO, &delayed);
+    if (!delayed_flag && kind == START_AUTOMATIC_DELAYED)
+        printf("Could not set delayed auto-start (error %lu).\n", GetLastError());
+
+    desc.lpDescription = "MuckDPI — DPI circumvention. Start type and arguments come from Muck Store.";
     ChangeServiceConfig2A(svc, SERVICE_CONFIG_DESCRIPTION, &desc);
     CloseServiceHandle(svc);
     CloseServiceHandle(scm);
-    puts("Windows service MuckDPI is installed with start=auto (no console).");
+    printf("Windows service MuckDPI: %s\nCommand: %s\n", start_kind_name(kind), binpath);
+}
+
+void service_stop_if_running(void)
+{
+    SC_HANDLE scm, svc;
+    SERVICE_STATUS st;
+    int i;
+
+    scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
+    if (!scm)
+        return;
+    svc = OpenServiceA(scm, SERVICE_NAME, SERVICE_STOP | SERVICE_QUERY_STATUS);
+    if (!svc) {
+        CloseServiceHandle(scm);
+        return;
+    }
+    ControlService(svc, SERVICE_CONTROL_STOP, &st);
+    for (i = 0; i < 50; i++) {
+        if (!QueryServiceStatus(svc, &st))
+            break;
+        if (st.dwCurrentState == SERVICE_STOPPED)
+            break;
+        Sleep(100);
+    }
+    CloseServiceHandle(svc);
+    CloseServiceHandle(scm);
 }
 
 // Control handler function
@@ -188,6 +402,7 @@ void service_controlhandler(DWORD request)
             deinit_all();
             ServiceStatus.dwWin32ExitCode = 0;
             ServiceStatus.dwCurrentState  = SERVICE_STOPPED;
+            break;
         default:
             break;
     }

@@ -2,10 +2,10 @@
   "$schema": "https://raw.githubusercontent.com/tab2can/MuckStore/main/schema/muck.schema.json",
   "id": "com.tab2can.muckdpi",
   "name": "MuckDPI",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "Apache-2.0",
   "summary": "Windows DPI circumvention utility. Start it from Muck Store; set launch arguments in Program Settings.",
-  "description": "MuckDPI intercepts outbound HTTP/HTTPS packets with WinDivert and applies fragmentation and fake-request tricks so ISP Deep Packet Inspection is less able to classify and block destinations. It requires administrator rights. Configure modesets and DNS redirect from Muck Store launch arguments — there are no .cmd scripts.",
+  "description": "MuckDPI intercepts outbound HTTP/HTTPS packets with WinDivert and applies fragmentation and fake-request tricks so ISP Deep Packet Inspection is less able to classify and block destinations. It requires administrator rights. Choose the Windows service start type (automatic, delayed, manual, or disabled) and modesets from Muck Store Program Settings. Click Start to write launch arguments into the service. There are no .cmd scripts.",
   "categories": ["network", "privacy"],
   "tags": ["dpi", "windows", "windivert"],
   "source": { "github": "tab2can/MuckDPI" },
@@ -27,14 +27,45 @@
     "attestations": "required"
   },
   "permissions": ["admin", "network", "autostart", "filesystem"],
-  "filesystemPaths": ["%MUCK_PROGRAM_DIR%\\*.txt"],
+  "filesystemPaths": ["%MUCK_PROGRAM_DIR%\\*.txt", "%APPDATA%\\MuckStore\\config\\com.tab2can.muckdpi.json", "%APPDATA%\\MuckStore\\installed.json"],
+  "settings": {
+    "schema": {
+      "type": "object",
+      "title": "MuckDPI",
+      "description": "Windows service start type. Click Start after changing this or Launch arguments — both are written into the service for the next boot.",
+      "i18n": {
+        "tr": {
+          "title": "MuckDPI",
+          "description": "Windows servis başlangıç türü. Bunu veya Launch arguments’ı değiştirdikten sonra Başlat’a basın; ikisi de servise yazılır."
+        }
+      },
+      "properties": {
+        "startType": {
+          "type": "string",
+          "title": "Service start type",
+          "description": "Automatic starts at boot with the Launch arguments saved on last Start. Manual only runs when you click Start. Delayed waits until Windows finishes booting.",
+          "enum": ["automatic", "automaticDelayed", "manual", "disabled"],
+          "enumNames": ["Automatic", "Automatic (delayed)", "Manual", "Disabled"],
+          "default": "automatic",
+          "x-muck-widget": "select",
+          "i18n": {
+            "tr": {
+              "title": "Servis başlangıç türü",
+              "description": "Otomatik: Windows açılışında, son Başlat’ta kayıtlı launch arguments ile. Manuel: yalnızca mağazadan Başlat. Gecikmeli: açılış biraz oturduktan sonra.",
+              "enumNames": ["Otomatik", "Otomatik (gecikmeli)", "Manuel", "Devre dışı"]
+            }
+          }
+        }
+      }
+    }
+  },
   "update": { "channel": "github-releases", "includePrerelease": false },
   "watchdog": { "onCrash": "restart", "maxRestarts": 3 },
   "i18n": {
     "tr": {
       "name": "MuckDPI",
       "summary": "Windows için DPI aşma aracı. Muck Store’dan başlatın; argümanları Program Ayarları’ndan girin.",
-      "description": "MuckDPI, WinDivert ile HTTP/HTTPS paketlerini yakalar ve parçalama / sahte istek yöntemleriyle ISS derin paket incelemesini zorlaştırır. Yönetici izni ister. Mod ve DNS yönlendirmesi Muck Store başlatma argümanlarından ayarlanır; .cmd dosyası yoktur."
+      "description": "MuckDPI, WinDivert ile HTTP/HTTPS paketlerini yakalar ve parçalama / sahte istek yöntemleriyle ISS derin paket incelemesini zorlaştırır. Yönetici izni ister. Servis başlangıç türünü (otomatik, gecikmeli, manuel, devre dışı) ve modları Program Ayarları’ndan seçin. Başlat, launch arguments’ı servise yazar. .cmd dosyası yoktur."
     }
   },
   "ui": {

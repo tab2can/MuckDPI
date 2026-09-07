@@ -24,8 +24,8 @@ Kaynak, [ValdikSS / GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) (Apache-
 3. Doğrulama raporunu okuyun. `admin`, `network`, `autostart` ve `filesystem` izinleri listelenir.
 4. Güven diyaloğunu onaylayın. Kurulum `%LOCALAPPDATA%\MuckStore\programs\com.tab2can.muckdpi\{sürüm}\` altına iner.
 5. Kütüphane → **Başlat**. UAC sorulur (mağazada “yöneticiyi hatırla” açıksa sonraki açılışlarda atlanır). Konsol penceresi açılmaz.
-6. İlk başarılı başlatma, `MuckDPI` Windows servisini `start=auto` ile kurar (eski `sc create` ile aynı). Bundan sonra Windows açılışında kendiliğinden gelir. Muck Store’daki **Start with Windows** anahtarı yönetici programlarda çalışmaz; onu kapatın.
-7. Launch arguments içine `start= "auto"` **yazmayın** — o `sc create` sözdizimidir, MuckDPI bayrağı değildir.
+6. Program Ayarları’nda **Servis başlangıç türü** menüsünden seçin: Otomatik, Otomatik (gecikmeli), Manuel, Devre dışı. Kaydetmek yetmez — değişiklik **Başlat**’a basınca Windows servisine yazılır.
+7. Otomatik / gecikmeli seçiliyse Windows açılışında servis, mağazadaki **Launch arguments** ile başlar. `start= "auto"` yazmayın; o `sc create` sözdizimidir, MuckDPI bayrağı değildir.
 
 Sideload ile denerken: Ayarlar → Geliştirici → klasörü yükle. Sideload, GitHub attestation’ını atlar.
 
@@ -39,7 +39,7 @@ Muck Store, `muckdpi.exe` üzerine Program Ayarları’ndaki **Launch arguments*
 
 `-5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253`
 
-Kütüphane → ⋯ → Ayarlar → Launch arguments.
+Kütüphane → ⋯ → Ayarlar → **Launch arguments**. Bu metin, Başlat’ta hem o anki sürece hem (otomatik / gecikmeli ise) Windows servisinin `binPath` değerine yazılır.
 
 | Amaç | Yapıştırılacak metin |
 | --- | --- |
