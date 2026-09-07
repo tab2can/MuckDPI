@@ -16,7 +16,7 @@
       {
         "file": "muckdpi.zip",
         "platform": "windows-x64",
-        "sha256": "00b46b860ed0b60df8fc2a51d2550b83aceebb41ccb02029c844551d3d40b065"
+        "sha256": "cb35dfeb51034e360b32a697feec10e6524ace4ed6d5789f559c9ee76e69108c"
       }
     ],
     "shortcuts": { "startMenu": true, "desktop": false }
