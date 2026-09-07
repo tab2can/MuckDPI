@@ -12,6 +12,7 @@
 #include <getopt.h>
 #include <in6addr.h>
 #include <ws2tcpip.h>
+#include <windows.h>
 #include "windivert.h"
 #include "muckdpi.h"
 #include "utils/repl_str.h"
@@ -24,7 +25,7 @@
 // My mingw installation does not load inet_pton definition for some reason
 WINSOCK_API_LINKAGE INT WSAAPI inet_pton(INT Family, LPCSTR pStringBuf, PVOID pAddr);
 
-#define MUCKDPI_VERSION "v1.0.0"
+#define MUCKDPI_VERSION "v1.0.1"
 
 #define die() do { sleep(20); exit(EXIT_FAILURE); } while (0)
 
@@ -198,6 +199,15 @@ static struct option long_options[] = {
 
 static char *filter_string = NULL;
 static char *filter_passive_string = NULL;
+
+/* Hide the console so Muck Store / elevated cmd.exe can keep waiting on us
+ * without a visible window (same idea as the old Windows service install). */
+static void hide_console(void)
+{
+    HWND hwnd = GetConsoleWindow();
+    if (hwnd)
+        ShowWindow(hwnd, SW_HIDE);
+}
 
 static void add_filter_str(int proto, int port) {
     const char *udp = " or (udp and !impostor and !loopback and " \
@@ -643,6 +653,7 @@ int main(int argc, char *argv[]) {
     // Make sure to search DLLs only in safe path, not in current working dir.
     SetDllDirectory("");
     SetSearchPathMode(BASE_SEARCH_PATH_ENABLE_SAFE_SEARCHMODE | BASE_SEARCH_PATH_PERMANENT);
+    hide_console();
 
     if (!running_from_service) {
         running_from_service = 1;
@@ -660,6 +671,7 @@ int main(int argc, char *argv[]) {
             return 0;
         }
         running_from_service = 0;
+        hide_console();
     }
 
     if (filter_string == NULL)
@@ -674,16 +686,32 @@ int main(int argc, char *argv[]) {
     );
 
     if (argc == 1) {
-        /* enable mode -9 by default */
+        /* Same profile as the old Turkey service script:
+         * -5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253
+         * --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253
+         */
         do_fragment_http = do_fragment_https = 1;
         do_reverse_frag = do_native_frag = 1;
         http_fragment_size = https_fragment_size = 2;
         do_fragment_http_persistent = do_fragment_http_persistent_nowait = 1;
         do_fake_packet = 1;
-        do_wrong_chksum = 1;
-        do_wrong_seq = 1;
-        do_block_quic = 1;
+        do_auto_ttl = 0;
+        ttl_of_fake_packet = 5;
         max_payload_size = 1200;
+        if (inet_pton(AF_INET, "77.88.8.8", &dnsv4_addr) == 1) {
+            do_dnsv4_redirect = 1;
+            add_filter_str(IPPROTO_UDP, 53);
+            add_filter_str(IPPROTO_UDP, 1253);
+            dnsv4_port = htons(1253);
+            flush_dns_cache();
+        }
+        if (inet_pton(AF_INET6, "2a02:6b8::feed:0ff", dnsv6_addr.s6_addr) == 1) {
+            do_dnsv6_redirect = 1;
+            add_filter_str(IPPROTO_UDP, 53);
+            add_filter_str(IPPROTO_UDP, 1253);
+            dnsv6_port = htons(1253);
+            flush_dns_cache();
+        }
     }
 
     while ((opt = getopt_long(argc, argv, "123456789pqrsaf:e:mwk:n", long_options, NULL)) != -1) {
@@ -1044,7 +1072,10 @@ int main(int argc, char *argv[]) {
                 " -6          -f 2 -e 2 --wrong-seq --reverse-frag --max-payload\n"
                 " -7          -f 2 -e 2 --wrong-chksum --reverse-frag --max-payload\n"
                 " -8          -f 2 -e 2 --wrong-seq --wrong-chksum --reverse-frag --max-payload\n"
-                " -9          -f 2 -e 2 --wrong-seq --wrong-chksum --reverse-frag --max-payload -q (this is the default)\n\n"
+                " -9          -f 2 -e 2 --wrong-seq --wrong-chksum --reverse-frag --max-payload -q\n\n"
+                "Default (no arguments): -5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253\n"
+                "                        --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253\n"
+                "The console window is hidden; logs go to stdout (Muck Store captures them).\n\n"
                 "Note: combination of --wrong-seq and --wrong-chksum generates two different fake packets.\n"
                 );
                 exit(ERROR_DEFAULT);

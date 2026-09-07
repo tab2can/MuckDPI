@@ -11,7 +11,7 @@
   <img src="docs/icon.png" width="96" height="96" alt="MuckDPI">
 </p>
 
-MuckDPI, ISS’lerin belirli siteleri sınıflandırıp kesmek için kullandığı **pasif ve aktif DPI**’ya karşı paket parçalama, Host manipülasyonu ve sahte istekler uygular. WinDivert sürücüsünü yükler; bu yüzden **yönetici izni** ister.
+MuckDPI, ISS’lerin belirli siteleri sınıflandırıp kesmek için kullandığı **pasif ve aktif DPI**’ya karşı paket parçalama, Host manipülasyonu ve sahte istekler uygular. WinDivert sürücüsünü yükler; bu yüzden **yönetici izni** ister. Başladığında konsol penceresi gizlenir; süreç arka planda kalır.
 
 Kaynak, [ValdikSS / GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) (Apache-2.0) üzerine kuruludur. Bu depo o kodu **MuckDPI** adıyla yeniden markalar, Muck Store manifest’i ile paketler ve komut dosyası yerine mağaza başlatma argümanlarını kullanır.
 
@@ -22,8 +22,9 @@ Kaynak, [ValdikSS / GoodbyeDPI](https://github.com/ValdikSS/GoodbyeDPI) (Apache-
 1. [Muck Store](https://github.com/tab2can/MuckStore) uygulamasını açın.
 2. Discover → GitHub alanına `tab2can/MuckDPI` yapıştırın (veya `muck-store` konusunda arayın).
 3. Doğrulama raporunu okuyun. `admin`, `network`, `autostart` ve `filesystem` izinleri listelenir.
-4. Güven diyaloğunu onaylayın. Kurulum `%LOCALAPPDATA%\MuckStore\programs\com.tab2can.muckdpi\1.0.0\` altına iner.
-5. Kütüphane → **Başlat**. UAC sorulur (mağazada “yöneticiyi hatırla” açıksa sonraki açılışlarda atlanır).
+4. Güven diyaloğunu onaylayın. Kurulum `%LOCALAPPDATA%\MuckStore\programs\com.tab2can.muckdpi\{sürüm}\` altına iner.
+5. Kütüphane → **Başlat**. UAC sorulur (mağazada “yöneticiyi hatırla” açıksa sonraki açılışlarda atlanır). Konsol penceresi açılmaz.
+6. Windows ile birlikte açılsın istiyorsanız Program Ayarları → **Start with Windows**.
 
 Sideload ile denerken: Ayarlar → Geliştirici → klasörü yükle. Sideload, GitHub attestation’ını atlar.
 
@@ -33,15 +34,18 @@ Günlük: `%LOCALAPPDATA%\MuckStore\logs\com.tab2can.muckdpi.log`
 
 ## Başlatma argümanları
 
-Muck Store, `muckdpi.exe` üzerine Program Ayarları’ndaki **Launch arguments** metnini ekler. Boş bırakırsanız program **mod -9** ile açılır (GoodbyeDPI ile aynı varsayılan).
+Muck Store, `muckdpi.exe` üzerine Program Ayarları’ndaki **Launch arguments** metnini ekler. **Boş bırakırsanız** eski Türkiye servis komutuyla aynı profil kullanılır (konsol gizli, arka planda):
+
+`-5 --set-ttl 5 --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253`
 
 Kütüphane → ⋯ → Ayarlar → Launch arguments.
 
 | Amaç | Yapıştırılacak metin |
 | --- | --- |
-| Varsayılan (modern, QUIC kapalı) | *(boş)* veya `-9` |
-| DNS zehirlemesine karşı yönlendirme | `-9 --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253` |
-| Daha yumuşak sahte TTL | `-5` |
+| Varsayılan (Türkiye DNS + TTL 5) | *(boş)* |
+| Modern, QUIC kapalı | `-9` |
+| DNS yönlendirme ile -9 | `-9 --dns-addr 77.88.8.8 --dns-port 1253 --dnsv6-addr 2a02:6b8::feed:0ff --dnsv6-port 1253` |
+| Yalnız -5 (otomatik TTL) | `-5` |
 | Yanlış SEQ | `-6` |
 | Yanlış checksum | `-7` |
 | SEQ + checksum | `-8` |
